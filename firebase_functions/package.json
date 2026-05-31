@@ -1,0 +1,36 @@
+{
+  "name": "notifyme-functions",
+  "description": "Cloud Functions for NotifyMe — the webhook receiver and FCM sender.",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "lint": "eslint --ext .ts src",
+    "lint:fix": "eslint --ext .ts src --fix",
+    "test": "npm run build && node --test lib/*.test.js",
+    "test:rules": "npm run build && NODE_BIN=$(node -p process.execPath) firebase emulators:exec --only firestore '\"$NODE_BIN\" --test lib/*.spec.js'",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "emulators": "npm run build && firebase emulators:start",
+    "shell": "npm run build && firebase functions:shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.1.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.57.0",
+    "firebase": "^12.14.0",
+    "typescript": "^5.6.0"
+  }
+}

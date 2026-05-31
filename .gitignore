@@ -1,0 +1,14 @@
+# Firebase — keep the real project binding (.firebaserc) out of source control.
+# Commit .firebaserc.example instead; each deployer copies it to .firebaserc.
+.firebaserc
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+
+# Firebase app config downloaded per-project (contains project IDs/keys)
+**/google-services.json
+**/GoogleService-Info.plist
+.env
+.env.local

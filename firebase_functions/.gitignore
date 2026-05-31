@@ -1,0 +1,10 @@
+# Compiled TypeScript output
+lib/
+
+# Dependencies
+node_modules/
+
+# Runtime config / secrets
+.env
+.env.local
+.runtimeconfig.json

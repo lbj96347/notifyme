@@ -1,0 +1,95 @@
+// ============================================================================
+//  TEMPLATE — this is NOT the file the app imports.
+//
+//  The app imports `firebase_options.dart`. That file is GENERATED, per
+//  deployment, by the FlutterFire CLI:
+//
+//      cd flutter_app
+//      flutterfire configure
+//
+//  Running that against *your own* Firebase project writes a real
+//  `firebase_options.dart` next to this template, filling in the API keys,
+//  app IDs, and project IDs below with your project's actual values.
+//
+//  This template is committed so contributors can see the expected shape; the
+//  generated `firebase_options.dart` is git-ignored on purpose, because it is
+//  specific to each self-hosted Firebase project and must NOT be shared or
+//  hardcoded into the open-source repo (see CLAUDE.md: "no hardcoded project
+//  IDs"). The values below are placeholders — they will not work as-is.
+//
+//  If you prefer not to use the CLI, copy this file to `firebase_options.dart`
+//  and paste in the values from your Firebase console (Project settings →
+//  General → Your apps), then delete unused platform getters.
+// ============================================================================
+
+// ignore_for_file: type=lint
+import 'package:firebase_core/firebase_core.dart'
+    show FirebaseOptions;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+/// Default [FirebaseOptions] for use with your Firebase apps.
+///
+/// Example:
+/// ```dart
+/// import 'firebase_options.dart';
+/// // ...
+/// await Firebase.initializeApp(
+///   options: DefaultFirebaseOptions.currentPlatform,
+/// );
+/// ```
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return web;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      case TargetPlatform.iOS:
+        return ios;
+      case TargetPlatform.macOS:
+        return macos;
+      default:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions are not configured for this platform. '
+          'Re-run `flutterfire configure` and select this platform.',
+        );
+    }
+  }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'YOUR_WEB_API_KEY',
+    appId: 'YOUR_WEB_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'YOUR_ANDROID_API_KEY',
+    appId: 'YOUR_ANDROID_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'YOUR_IOS_API_KEY',
+    appId: 'YOUR_IOS_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
+    iosBundleId: 'com.notifyme.notifyme',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'YOUR_MACOS_API_KEY',
+    appId: 'YOUR_MACOS_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
+    iosBundleId: 'com.notifyme.notifyme',
+  );
+}

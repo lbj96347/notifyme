@@ -1,0 +1,46 @@
+rules_version = '2';
+
+// NotifyMe Firestore security rules.
+//
+// Every collection is keyed by `uid` and scoped to the authenticated owner.
+// Notification documents are written server-side by the webhook Cloud Function
+// (via the Admin SDK, which bypasses these rules), so clients are only granted
+// read + the read-state updates the app needs — never arbitrary creates.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // True when a request is authenticated as the given uid.
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // users/{uid}: profile (uid, email, createdAt).
+    // The signed-in user can read and write only their own profile document.
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // devices/{deviceId}: registered FCM tokens (uid, fcmToken, platform).
+    // The app registers/updates/removes its own device tokens. Each document
+    // must carry the caller's uid, both on existing docs and on create.
+    match /devices/{deviceId} {
+      allow read, delete: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid)
+                    && isOwner(request.resource.data.uid);
+    }
+
+    // notifications/{notificationId}: inbox documents
+    // (uid, title, message, category, status, read, createdAt).
+    // Created only server-side by the webhook function. Clients may read their
+    // own notifications, update read state, and delete them — but not create
+    // or forge them.
+    match /notifications/{notificationId} {
+      allow read, delete: if isOwner(resource.data.uid);
+      allow update: if isOwner(resource.data.uid)
+                    && isOwner(request.resource.data.uid)
+                    && request.resource.data.uid == resource.data.uid;
+      allow create: if false;
+    }
+  }
+}
