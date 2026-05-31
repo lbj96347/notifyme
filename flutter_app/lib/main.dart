@@ -29,9 +29,19 @@ void main() async {
   bool firebaseReady = false;
   String? firebaseError;
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    final options = DefaultFirebaseOptions.currentPlatform;
+    // Guard against the committed placeholder values. The native iOS Firebase
+    // SDK raises an NSException from +[FIRApp addAppToAppDictionary:] when the
+    // appId doesn't match the expected format — that's an Objective-C exception
+    // which bypasses this try/catch and SIGABRTs the process. Detect the
+    // template values up-front so we render the diagnostic screen instead.
+    if (options.appId.startsWith('YOUR_') || options.apiKey.startsWith('YOUR_')) {
+      throw StateError(
+        'firebase_options.dart still contains placeholder values. '
+        'Run `flutterfire configure` to generate real values for your project.',
+      );
+    }
+    await Firebase.initializeApp(options: options);
     firebaseReady = true;
   } catch (e) {
     firebaseError = e.toString();
@@ -52,9 +62,10 @@ class NotifyMeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // AuthService is a stateless wrapper over Firebase singletons, so creating
-    // it here (rather than as a field) keeps this constructor `const`.
-    final authService = AuthService();
+    // AuthService touches FirebaseAuth.instance in its constructor, which
+    // throws [core/no-app] when Firebase failed to initialize. Only construct
+    // it on the happy path so the diagnostic screen can still render.
+    final authService = firebaseReady ? AuthService() : null;
 
     return MaterialApp(
       title: 'NotifyMe',
@@ -76,7 +87,7 @@ class NotifyMeApp extends StatelessWidget {
       // When Firebase is configured, AuthGate decides between the sign-in
       // screen and the app. Otherwise we show a clear diagnostic screen.
       home: firebaseReady
-          ? AuthGate(authService: authService)
+          ? AuthGate(authService: authService!)
           : _FirebaseErrorScreen(error: firebaseError),
     );
   }
