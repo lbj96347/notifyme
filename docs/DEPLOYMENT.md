@@ -211,6 +211,23 @@ in the MVP — treat the full URL as sensitive.
 > needs the Cloud Build builder role granted once. See FIREBASE_SETUP.md §5.4
 > (and the failure-notes table in §7 below).
 
+> **Allow public (unauthenticated) calls to the webhook.** A gen-2 function is a
+> Cloud Run service; on some projects/org policies it deploys **private**, and
+> every webhook call then returns an HTML **`403 Forbidden`** from "Google
+> Frontend". The webhook is meant to be public — the `userToken` in the path is
+> the routing key — so grant the invoker role to `allUsers` once:
+>
+> ```bash
+> gcloud run services add-iam-policy-binding webhook \
+>   --region=us-central1 --project=<your-project-id> \
+>   --member="allUsers" --role="roles/run.invoker"
+> ```
+>
+> (Equivalent: `gcloud functions add-invoker-policy-binding webhook
+> --region=us-central1 --member=allUsers`.) If an org policy forbids `allUsers`
+> on Cloud Run (domain-restricted sharing), you can't expose it publicly until
+> that policy is relaxed.
+
 Deploy everything in one shot:
 
 ```bash
@@ -247,6 +264,7 @@ Expected: **`HTTP/2 201`** with body `{"ok":true,"id":"<docId>"}`.
 | `404 {ok:false,error:"unknown webhook token"}` | Token malformed **or** not found (intentionally indistinguishable) |
 | `405` + `Allow: POST` | Wrong HTTP method |
 | `500 {ok:false,error:"internal error"}` | Write failed — check function logs |
+| `403 Forbidden` **HTML** (`Google Frontend`, not JSON) | The Cloud Run service rejects **unauthenticated** calls — the public invoker binding is missing. Grant it (see §4) |
 
 ### 5.2 Confirm the Firestore write
 
@@ -341,6 +359,7 @@ halted before reaching everyone.
 | Functions deploy fails on Spark plan | Functions need Blaze | Upgrade to Blaze (Console → Usage and billing) |
 | `tsc` errors during deploy | TypeScript didn't compile | `cd firebase_functions && npm run build` and fix locally first |
 | Node engine warning / deploy refusal | Local Node ≠ 20 | Use Node 20 (matches `engines` in `package.json`) |
+| `curl` returns HTML `403 Forbidden` (`Google Frontend`) | Cloud Run service rejects unauthenticated calls — public invoker binding missing | Grant `allUsers` the `roles/run.invoker` role on the `webhook` service (see §4) |
 | `curl` returns `404 unknown webhook token` | Token missing/wrong, or `webhookToken` not set on `users/{uid}` | Verify the token in the URL matches the user doc's `webhookToken` |
 | `curl` returns `400` | Payload violates the contract | Read the `details[]` array; `title` + `message` are required, `status` ∈ {success,error,warning,info}, `url` must be http(s) |
 | `201` but no push arrives | No registered device / stale FCM token | Open the app on a real device to register; the function auto-deletes stale tokens — re-open to re-register |

@@ -327,6 +327,22 @@ On success the CLI prints the function's HTTPS URL, e.g.:
 Function URL (webhook): https://<region>-<your-project>.cloudfunctions.net/webhook
 ```
 
+> **Make the webhook publicly callable.** A gen-2 function is a Cloud Run
+> service. On some projects it deploys **private**, and every webhook call then
+> returns an HTML **`403 Forbidden`** from "Google Frontend" before your code
+> runs. The webhook is meant to be public (the `userToken` in the path is the
+> routing key), so grant unauthenticated invoke once:
+>
+> ```bash
+> gcloud run services add-iam-policy-binding webhook \
+>   --region=us-central1 --project=<your-project-id> \
+>   --member="allUsers" --role="roles/run.invoker"
+> ```
+>
+> Use the region your function deploys to (default `us-central1`). If an org
+> policy blocks `allUsers` on Cloud Run, you must relax domain-restricted sharing
+> before the endpoint can be reached publicly.
+
 **Security rules** must scope every read/write to the signed-in user's own
 `uid`. The expected shape (lives in `firestore.rules`):
 
@@ -371,8 +387,12 @@ curl → Cloud Function (webhook/{userToken}) → Firestore (notifications) → 
 ```
 
 Verify each hop:
+- **Reachable at all**: a `201 {"ok":true,"id":"…"}` means it worked. An HTML
+  **`403 Forbidden`** (from "Google Frontend", before your code runs) means the
+  function isn't public — grant `allUsers` the invoker role (see the callout in
+  §9).
 - **Function** received it: `firebase functions:log` (or Console → Functions →
-  Logs). A 200 means the doc was written and the push dispatched.
+  Logs). A 200/201 means the doc was written and the push dispatched.
 - **Firestore**: a new doc appears in `notifications` with your `uid`.
 - **Phone**: the push arrives; tapping it opens the app to the detail view (the
   `url` field makes it tappable through to the PR/run/dashboard).
