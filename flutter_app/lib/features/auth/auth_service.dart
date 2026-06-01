@@ -47,6 +47,11 @@ class AuthService {
       return credential;
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageFor(e));
+    } on FirebaseException catch (e) {
+      // The Firestore profile write failed (e.g. rules not deployed, offline).
+      // Auth itself succeeded, so don't masquerade as a credential error —
+      // surface a distinct, actionable message instead of silently dropping it.
+      throw AuthException(_profileMessageFor(e));
     }
   }
 
@@ -64,6 +69,8 @@ class AuthService {
       return credential;
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageFor(e));
+    } on FirebaseException catch (e) {
+      throw AuthException(_profileMessageFor(e));
     }
   }
 
@@ -123,5 +130,17 @@ class AuthService {
       default:
         return e.message ?? 'Authentication failed. Please try again.';
     }
+  }
+
+  /// Message for a failure to write the `users/{uid}` profile after auth
+  /// succeeded. `permission-denied` almost always means the Firestore security
+  /// rules haven't been deployed to this project yet.
+  String _profileMessageFor(FirebaseException e) {
+    if (e.code == 'permission-denied') {
+      return 'Signed in, but could not set up your profile. Deploy the '
+          'Firestore security rules to your project, then try again.';
+    }
+    return 'Signed in, but could not set up your profile. Check your '
+        'connection and try again.';
   }
 }
