@@ -10,5 +10,10 @@ ui-debug.log
 # Firebase app config downloaded per-project (contains project IDs/keys)
 **/google-services.json
 **/GoogleService-Info.plist
+
+# FlutterFire output — binds the app to the deployer's OWN Firebase project
+# (contains projectId/appIds). Each deployer runs `flutterfire configure`,
+# which regenerates this. See docs/FIREBASE_SETUP.md.
+**/firebase.json
 .env
 .env.local
