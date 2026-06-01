@@ -1,4 +1,4 @@
-package com.notifyme.notifyme
+package com.asktobuild.notifyme
 
 import io.flutter.embedding.android.FlutterActivity
 
