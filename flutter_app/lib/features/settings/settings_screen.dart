@@ -11,12 +11,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../auth/auth_service.dart';
 import 'webhook_url.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
     required this.uid,
+    required this.authService,
     this.firestore,
     this.urlBuilder,
     this.projectId,
@@ -24,6 +26,10 @@ class SettingsScreen extends StatefulWidget {
 
   /// The signed-in user whose webhook token to show.
   final String uid;
+
+  /// Used to sign the user out. [AuthGate] reacts to the auth-state change and
+  /// routes back to the sign-in screen automatically.
+  final AuthService authService;
 
   /// Firestore instance; defaults to the singleton. Injectable for tests.
   final FirebaseFirestore? firestore;
@@ -67,10 +73,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Confirm, then sign out. [AuthGate] streams auth state, so signing out
+  /// routes back to the sign-in screen without manual navigation here.
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+          'You can sign back in any time. Your webhook URL stays the same.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await widget.authService.signOut();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not sign out: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
+          ),
+        ],
+      ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: _userDoc,
         builder: (context, snapshot) {

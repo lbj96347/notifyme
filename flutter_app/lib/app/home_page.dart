@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../features/auth/auth_service.dart';
+import '../features/devices/device_service.dart';
 import '../features/notifications/notification_inbox_screen.dart';
 import '../features/notifications/notification_tap_router.dart';
 import '../features/settings/settings_screen.dart';
@@ -38,16 +39,29 @@ class _HomePageState extends State<HomePage> {
   /// navigator is mounted by the time a cold-start tap is handled.
   late final NotificationTapRouter _tapRouter;
 
+  /// Requests notification permission and registers this device's FCM token so
+  /// the webhook function knows where to push. Created here — once the user is
+  /// signed in — and torn down on sign-out via [dispose].
+  late final DeviceService _deviceService;
+
   @override
   void initState() {
     super.initState();
     _tapRouter = NotificationTapRouter(uid: widget.user.uid);
     _tapRouter.register();
+
+    // Prompt for notification permission and store the device token. This is
+    // what makes pushes actually arrive; without it the user is never asked and
+    // no `devices` document is written. Fire-and-forget — a declined prompt is a
+    // no-op inside the service and must not block the UI.
+    _deviceService = DeviceService();
+    _deviceService.register(widget.user.uid);
   }
 
   @override
   void dispose() {
     _tapRouter.dispose();
+    _deviceService.dispose();
     super.dispose();
   }
 
@@ -56,7 +70,7 @@ class _HomePageState extends State<HomePage> {
     // Built here (not a `const` list) so each tab receives the signed-in user.
     final tabs = <Widget>[
       NotificationInboxScreen(authService: widget.authService),
-      SettingsScreen(uid: widget.user.uid),
+      SettingsScreen(uid: widget.user.uid, authService: widget.authService),
     ];
 
     return Scaffold(
