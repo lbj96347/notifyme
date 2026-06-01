@@ -325,6 +325,7 @@ halted before reaching everyone.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `Error: HTTP Error: 403 … Cloud Functions API has not been used` | APIs not enabled on first deploy | Accept the CLI prompt, or enable Cloud Functions / Cloud Build / Artifact Registry in the Console; re-deploy |
+| `Error: Failed to make request to https://serviceusage.googleapis.com/...cloudbuild.googleapis.com` | CLI can't reach Service Usage to auto-enable APIs — a network/transport failure, usually a **VPN/proxy** intercepting Google APIs (not billing, not a clean 403) | Enable the APIs manually in the [Console](https://console.cloud.google.com/apis/library) (`cloudfunctions`, `cloudbuild`, `artifactregistry`, `run`, `serviceusage`) or via `gcloud services enable`, then re-deploy; or deploy with the VPN/proxy off, or set `HTTPS_PROXY`/`NODE_EXTRA_CA_CERTS` |
 | Functions deploy fails on Spark plan | Functions need Blaze | Upgrade to Blaze (Console → Usage and billing) |
 | `tsc` errors during deploy | TypeScript didn't compile | `cd firebase_functions && npm run build` and fix locally first |
 | Node engine warning / deploy refusal | Local Node ≠ 20 | Use Node 20 (matches `engines` in `package.json`) |

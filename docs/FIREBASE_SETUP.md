@@ -97,7 +97,22 @@ The webhook receiver is a Cloud Function — the only externally-reachable surfa
 1. Console → **Build → Functions → Get started**.
 2. If prompted, **upgrade to the Blaze plan** and attach a billing account
    (required — see the billing note above).
-3. The actual code lives in `firebase_functions/`; you deploy it in step 9. No
+3. **Enable the APIs the deploy needs.** The CLI normally enables these for you
+   on first deploy, but that auto-enable step fails behind a **VPN or corporate
+   proxy** (the deploy aborts with `Error: Failed to make request to
+   https://serviceusage.googleapis.com/...`). Enabling them by hand once avoids
+   that. In the [API Library](https://console.cloud.google.com/apis/library)
+   (your project selected), search for and **Enable** each of: Cloud Functions
+   API, Cloud Build API, Artifact Registry API, Cloud Run Admin API, and Service
+   Usage API. Or, with `gcloud`:
+   ```bash
+   gcloud config set project <your-project-id>
+   gcloud services enable \
+     cloudfunctions.googleapis.com cloudbuild.googleapis.com \
+     artifactregistry.googleapis.com run.googleapis.com \
+     serviceusage.googleapis.com
+   ```
+4. The actual code lives in `firebase_functions/`; you deploy it in step 9. No
    further console clicks are needed here.
 
 ---
@@ -299,6 +314,15 @@ Verify each hop:
 - First deploy may fail while Google enables `cloudfunctions`,
   `cloudbuild`, and `artifactregistry` APIs — wait a minute and re-run
   `firebase deploy --only functions`.
+- **`Error: Failed to make request to
+  https://serviceusage.googleapis.com/v1/projects/<id>/services/cloudbuild.googleapis.com`**
+  — the CLI could not reach the Service Usage API to enable Cloud Build. This is
+  a **network/transport failure** (not billing — Blaze is fine, and not a clean
+  `403`), almost always caused by a **VPN or proxy** intercepting Google API
+  traffic. Fix: enable the APIs manually (see step 5.3 above), or deploy with the
+  VPN/proxy off. If you must stay behind a proxy, point Node at it with
+  `export HTTPS_PROXY=http://<proxy>:<port>` (and `HTTP_PROXY`) before deploying,
+  and set `NODE_EXTRA_CA_CERTS=/path/to/corp-ca.pem` if it does TLS interception.
 
 ### FCM tokens
 - **No push arrives, but the Firestore doc was written** → the device's FCM

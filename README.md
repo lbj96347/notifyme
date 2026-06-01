@@ -104,20 +104,98 @@ snippets.
 
 ## Quick start
 
-> NotifyMe is **pre-implementation** — the components below describe the target
-> deployment flow once the stack is built.
+NotifyMe runs in your own Firebase project. See
+[`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md) for the complete first-time
+setup guide.
 
-NotifyMe runs in your own Firebase project. At a high level:
+The important folder rule is:
 
-1. **Create a Firebase project** and enable Authentication, Firestore, Cloud
-   Functions, and Cloud Messaging.
-2. **Deploy the Cloud Function and security rules** from `firebase_functions/`.
-   This publishes your personal `POST /webhook/{userToken}` endpoint.
-3. **Build and install the Flutter app** from `flutter_app/`, pointing it at
-   your Firebase project. Sign in to register your device for push delivery.
-4. **Send a notification** from any tool using the payload contract above — see
-   `examples/` for copy-paste senders for Claude Code, Codex CLI, n8n, GitHub
-   Actions, and plain `curl`.
+- Run **Firebase project commands** from the repository root: `notifyme/`.
+- Run **Flutter app commands** from `notifyme/flutter_app/`.
+- Run **Cloud Functions dependency/build/test commands** from
+  `notifyme/firebase_functions/`.
+
+### 1. Configure Firebase from the repository root
+
+Use the repository root for Firebase CLI commands because it contains
+`firebase.json`, `firestore.rules`, `firestore.indexes.json`, and the
+`firebase_functions/` source folder.
+
+```bash
+cd /path/to/notifyme
+firebase login
+firebase use <your-firebase-project-id>
+
+# First-time project initialization, if you have not already created firebase.json.
+firebase init
+
+# Deploy Firestore rules, indexes, and Cloud Functions.
+firebase deploy
+```
+
+If this repository already contains `firebase.json`, you usually do not need to
+run `firebase init` again. Select the project with `firebase use
+<your-firebase-project-id>` and deploy from the repository root.
+
+> **Enable the required APIs before your first Functions deploy.** The
+> Cloud Functions deploy needs the **Cloud Functions**, **Cloud Build**,
+> **Artifact Registry**, **Cloud Run**, and **Service Usage** APIs. The CLI
+> tries to enable them automatically on first deploy, but that step fails — often
+> with `Error: Failed to make request to
+> https://serviceusage.googleapis.com/...` — if you are behind a **VPN or
+> corporate proxy** that intercepts Google API traffic. The reliable fix is to
+> enable them yourself once in the [Google Cloud
+> Console](https://console.cloud.google.com/apis/library) (select your project,
+> search each API, click **Enable**), then re-run `firebase deploy`. With
+> `gcloud` installed you can do it in one command:
+>
+> ```bash
+> gcloud config set project <your-firebase-project-id>
+> gcloud services enable \
+>   cloudfunctions.googleapis.com cloudbuild.googleapis.com \
+>   artifactregistry.googleapis.com run.googleapis.com \
+>   serviceusage.googleapis.com
+> ```
+>
+> See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#troubleshooting) for the full
+> troubleshooting table.
+
+### 2. Configure the Flutter app from `flutter_app/`
+
+FlutterFire writes Firebase app configuration into the Flutter project, so run
+it from `flutter_app/`.
+
+```bash
+cd /path/to/notifyme/flutter_app
+flutter pub get
+flutterfire configure --project=<your-firebase-project-id>
+flutter run
+```
+
+This generates the local Firebase options file for your own Firebase project.
+Do not commit real Firebase credentials or generated local config files.
+
+### 3. Work on Cloud Functions from `firebase_functions/`
+
+Use `firebase_functions/` for Node dependency installation, TypeScript builds,
+linting, and tests.
+
+```bash
+cd /path/to/notifyme/firebase_functions
+npm install
+npm run build
+npm test
+```
+
+Deploying still happens from the repository root with `firebase deploy`, because
+the Firebase CLI reads the root `firebase.json`.
+
+### 4. Send a notification
+
+After the backend is deployed and the app has signed in/registers a device,
+send a notification from any tool using the payload contract above. The
+`examples/` folder contains copy-paste senders for Claude Code, Codex CLI, n8n,
+GitHub Actions, and plain `curl`.
 
 A minimal send looks like:
 
