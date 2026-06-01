@@ -206,6 +206,11 @@ in the MVP — treat the full URL as sensitive.
 > Cloud Build, and Artifact Registry APIs and to confirm the region. Accept, and
 > re-run if it times out provisioning.
 
+> **Build fails on "missing permission on the build service account"?** Gen-2
+> builds run as the default compute service account, which on newer projects
+> needs the Cloud Build builder role granted once. See FIREBASE_SETUP.md §5.4
+> (and the failure-notes table in §7 below).
+
 Deploy everything in one shot:
 
 ```bash
@@ -251,6 +256,12 @@ push later fails, so a present doc + no push means the problem is in FCM, not
 the webhook.)
 
 ### 5.3 Confirm the push reached the phone
+
+> **iOS first-time setup:** pushes need an APNs key uploaded to Firebase and the
+> Push Notifications capability enabled in Xcode — see
+> [FIREBASE_SETUP.md §8.4](FIREBASE_SETUP.md#84-set-up-ios-push-notifications-push-wont-work-without-this).
+> The app prompts for notification permission on first launch after sign-in and
+> registers the device only once granted.
 
 - Open the app on a real device while signed in → the device's FCM token is
   registered in `devices`. Confirm a doc exists there for your `uid`.
@@ -326,13 +337,15 @@ halted before reaching everyone.
 | --- | --- | --- |
 | `Error: HTTP Error: 403 … Cloud Functions API has not been used` | APIs not enabled on first deploy | Accept the CLI prompt, or enable Cloud Functions / Cloud Build / Artifact Registry in the Console; re-deploy |
 | `Error: Failed to make request to https://serviceusage.googleapis.com/...cloudbuild.googleapis.com` | CLI can't reach Service Usage to auto-enable APIs — a network/transport failure, usually a **VPN/proxy** intercepting Google APIs (not billing, not a clean 403) | Enable the APIs manually in the [Console](https://console.cloud.google.com/apis/library) (`cloudfunctions`, `cloudbuild`, `artifactregistry`, `run`, `serviceusage`) or via `gcloud services enable`, then re-deploy; or deploy with the VPN/proxy off, or set `HTTPS_PROXY`/`NODE_EXTRA_CA_CERTS` |
+| `Build failed… missing permission on the build service account` | Gen-2 build runs as the default compute SA (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`), which lacks the Cloud Build builder role on newer projects | Grant it once: `gcloud projects add-iam-policy-binding <project-id> --member=serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com --role=roles/cloudbuild.builds.builder --condition=None` (or Console → IAM → add **Cloud Build Service Account**), wait 1–2 min, re-deploy. See FIREBASE_SETUP.md §5.4 |
 | Functions deploy fails on Spark plan | Functions need Blaze | Upgrade to Blaze (Console → Usage and billing) |
 | `tsc` errors during deploy | TypeScript didn't compile | `cd firebase_functions && npm run build` and fix locally first |
 | Node engine warning / deploy refusal | Local Node ≠ 20 | Use Node 20 (matches `engines` in `package.json`) |
 | `curl` returns `404 unknown webhook token` | Token missing/wrong, or `webhookToken` not set on `users/{uid}` | Verify the token in the URL matches the user doc's `webhookToken` |
 | `curl` returns `400` | Payload violates the contract | Read the `details[]` array; `title` + `message` are required, `status` ∈ {success,error,warning,info}, `url` must be http(s) |
 | `201` but no push arrives | No registered device / stale FCM token | Open the app on a real device to register; the function auto-deletes stale tokens — re-open to re-register |
-| iOS: no push ever | APNs key not uploaded, or capabilities missing | Upload APNs auth key (Console → Cloud Messaging); enable Push Notifications + Remote notifications in Xcode; test on a physical device |
+| iOS: no push ever | APNs key not uploaded, or capabilities missing | Upload APNs auth key (Console → Cloud Messaging); enable Push Notifications + Remote notifications in Xcode; test on a physical device — full walkthrough in [FIREBASE_SETUP.md §8.4](FIREBASE_SETUP.md#84-set-up-ios-push-notifications-push-wont-work-without-this) |
+| App never asks for notification permission | Stale build predating the device-registration wiring | Rebuild/reinstall the app; the prompt fires on first launch after sign-in (`DeviceService.register`). On iOS the prompt still needs the §8.4 capability to deliver pushes |
 | `PERMISSION_DENIED` reading inbox in app | Rules not deployed, or query missing an index | `firebase deploy --only firestore`; check Console → Firestore → Indexes for a build-needed index |
 | Query fails with "index required" link | Composite index still building or absent | Click the link to create it, or `firebase deploy --only firestore:indexes`; wait for `Enabled` |
 | Emulator / `npm run test:rules` won't start | JDK too old | `export JAVA_HOME=$(/usr/libexec/java_home -v 17)` (needs JDK 11+) |

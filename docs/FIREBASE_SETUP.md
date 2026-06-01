@@ -112,7 +112,25 @@ The webhook receiver is a Cloud Function — the only externally-reachable surfa
      artifactregistry.googleapis.com run.googleapis.com \
      serviceusage.googleapis.com
    ```
-4. The actual code lives in `firebase_functions/`; you deploy it in step 9. No
+4. **Grant the build service account permission.** Gen-2 functions build via
+   Cloud Build running as the project's **default compute service account**
+   (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`). On projects created
+   after GCP's 2024 service-account change this account no longer gets the Editor
+   role automatically, so the first deploy fails at the build stage with
+   *"Could not build the function due to a missing permission on the build
+   service account."* Grant it the Cloud Build builder role once:
+   ```bash
+   # PROJECT_NUMBER: Console → Project settings → "Project number"
+   #                 (or: gcloud projects describe <your-project-id> --format='value(projectNumber)')
+   gcloud projects add-iam-policy-binding <your-project-id> \
+     --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" \
+     --role="roles/cloudbuild.builds.builder" \
+     --condition=None
+   ```
+   Or in the Console: **IAM & Admin → IAM** (tick *Include Google-provided role
+   grants*), find that service account, **Edit → Add role → Cloud Build Service
+   Account**, Save. IAM changes take 1–2 minutes to propagate.
+5. The actual code lives in `firebase_functions/`; you deploy it in step 9. No
    further console clicks are needed here.
 
 ---
@@ -121,7 +139,8 @@ The webhook receiver is a Cloud Function — the only externally-reachable surfa
 
 1. Console → **Project settings → General → Your apps → Add app → iOS**.
 2. **Apple bundle ID** — must match the bundle ID in Xcode (e.g.
-   `com.yourname.notifyme`). Use a reverse-DNS ID you control.
+   `com.yourname.notifyme`). Use a reverse-DNS ID you control. Reuse this exact
+   same ID for the APNs App ID in §8.4 — a mismatch silently breaks push.
 3. (Optional) App nickname and App Store ID.
 4. **Register app**, then **download `GoogleService-Info.plist`**.
 5. Place it at `flutter_app/ios/Runner/GoogleService-Info.plist` and add it to
@@ -184,19 +203,81 @@ This writes `.firebaserc` (an alias → project-ID map). Because it's local
 config, it's fine to keep the alias generic so others can `firebase use --add`
 their *own* project.
 
-### 8.4 Configure APNs for iOS (push won't work without this)
+### 8.4 Set up iOS push notifications (push won't work without this)
 
-iOS pushes route through Apple, so FCM needs an **APNs authentication key**:
+iOS pushes route through Apple's APNs, so three things must line up: an **APNs
+key** created on the Apple Developer site, that key **uploaded to Firebase**, and
+the **Push Notifications capability** enabled on the app. Do all three.
 
-1. In the [Apple Developer portal](https://developer.apple.com/account) →
-   **Certificates, Identifiers & Profiles → Keys → +** → enable **Apple Push
-   Notifications service (APNs)** → download the `.p8` file (you can only
-   download it once). Note the **Key ID** and your **Team ID**.
-2. Firebase Console → **Project settings → Cloud Messaging → Apple app
-   configuration → APNs Authentication Key → Upload**. Provide the `.p8`, Key
-   ID, and Team ID.
-3. In Xcode, enable the **Push Notifications** capability and the **Background
-   Modes → Remote notifications** capability on the Runner target.
+> **Android needs none of this** — FCM talks to Android directly. These steps are
+> iOS-only. (Android 13+ runtime permission is handled automatically by the app;
+> see the end of this section.)
+
+**Prerequisites**
+- A paid **Apple Developer Program** membership (APNs keys require it).
+- One consistent **bundle ID** (e.g. `com.yourname.notifyme`) used everywhere:
+  Xcode (`PRODUCT_BUNDLE_IDENTIFIER`), the Firebase iOS app you registered in
+  §6, and the App ID on the Apple Developer site. A mismatch silently breaks
+  delivery.
+
+**1. Create an APNs Authentication Key (.p8) — recommended**
+
+A `.p8` auth key is preferred over APNs certificates: one key covers **all** your
+apps and **both** sandbox (development) and production, and it never expires.
+
+1. [Apple Developer](https://developer.apple.com/account) → **Certificates,
+   Identifiers & Profiles → Keys → + (Create a key)**.
+2. Name it (e.g. "NotifyMe APNs"), tick **Apple Push Notifications service
+   (APNs)**, then **Continue → Register**.
+3. **Download the `.p8` file — you can only download it once.** Store it somewhere
+   safe; treat it as a secret (never commit it to git).
+4. Record two values:
+   - the **Key ID** (shown on the key's page, e.g. `ABC123DEFG`), and
+   - your **Team ID** (top-right of the portal, under your account name).
+
+   > *Alternative (not recommended):* APNs SSL certificates also work but are
+   > per-app, expire yearly, and come in separate sandbox/production variants.
+   > Use the auth key unless you have a specific reason not to.
+
+**2. Upload the key to Firebase**
+
+Firebase Console → **Project settings → Cloud Messaging** → under *Apple app
+configuration* find your iOS app → **APNs Authentication Key → Upload**. Provide
+the `.p8`, the **Key ID**, and the **Team ID** from step 1. (You do **not** need
+the legacy "Cloud Messaging API"; FCM HTTP v1 is enabled by default.)
+
+**3. Enable the Push Notifications capability in Xcode**
+
+This repo already ships the pieces that are project-wide:
+`ios/Runner/Runner.entitlements` declares `aps-environment`, and
+`ios/Runner/Info.plist` declares the `remote-notification` background mode. But
+the Xcode project file (`project.pbxproj`) is kept **per-developer** (so each
+deployer's signing/team stays out of git), so you must turn the capability on
+under **your own** Apple team:
+
+1. Open the workspace (not the project): `open flutter_app/ios/Runner.xcworkspace`.
+2. Select the **Runner** target → **Signing & Capabilities**.
+3. Set **Team** to your Apple Developer team and keep **Automatically manage
+   signing** on. Xcode provisions the Push Notifications entitlement on your App
+   ID for you.
+4. Click **+ Capability** and add **Push Notifications** (Xcode picks up the
+   shipped `Runner.entitlements`). Click **+ Capability** again and add
+   **Background Modes**, then tick **Remote notifications**.
+
+**4. Test on a physical device**
+
+The iOS **Simulator does not reliably receive** FCM/APNs pushes — the permission
+prompt appears, but real delivery needs a real iPhone/iPad. Build to a device
+(`flutter run -d <device>`), sign in, and accept the permission prompt.
+
+**What the app does at runtime:** on the first launch after sign-in it calls
+`DeviceService.register()` (wired in `HomePage`), which **requests notification
+permission** and, once granted, writes this device's FCM token to a
+`devices/{id}` document so the webhook function knows where to push. Declining
+the prompt is a no-op — the rest of the app still works; pushes just won't
+arrive until permission is granted. On **Android 13+** the same call triggers the
+runtime `POST_NOTIFICATIONS` prompt; no extra setup needed. Verify a push
+round-trips end-to-end in §10.
 
 ### 8.5 Configure FlutterFire
 
@@ -314,6 +395,11 @@ Verify each hop:
 - First deploy may fail while Google enables `cloudfunctions`,
   `cloudbuild`, and `artifactregistry` APIs — wait a minute and re-run
   `firebase deploy --only functions`.
+- **`Build failed with status: FAILURE. Could not build the function due to a
+  missing permission on the build service account`** — the default compute
+  service account is missing the Cloud Build builder role. Grant it once (see
+  step 5.4 above): `roles/cloudbuild.builds.builder` on
+  `<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`, then re-deploy.
 - **`Error: Failed to make request to
   https://serviceusage.googleapis.com/v1/projects/<id>/services/cloudbuild.googleapis.com`**
   — the CLI could not reach the Service Usage API to enable Cloud Build. This is

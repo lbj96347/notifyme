@@ -157,6 +157,23 @@ run `firebase init` again. Select the project with `firebase use
 >   serviceusage.googleapis.com
 > ```
 >
+> **Also grant the build service account permission** before your first deploy.
+> Gen-2 functions build via Cloud Build running as your project's default compute
+> service account (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`), which
+> on projects created after GCP's 2024 change no longer has the role it needs — so
+> the first deploy fails with *"Could not build the function due to a missing
+> permission on the build service account."* Grant it once:
+>
+> ```bash
+> gcloud projects add-iam-policy-binding <your-firebase-project-id> \
+>   --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" \
+>   --role="roles/cloudbuild.builds.builder" --condition=None
+> ```
+>
+> (Find `<PROJECT_NUMBER>` in Console → Project settings → "Project number", or
+> via `gcloud projects describe`. In the Console: IAM → that account → add the
+> **Cloud Build Service Account** role.)
+>
 > See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#troubleshooting) for the full
 > troubleshooting table.
 
