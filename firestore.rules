@@ -18,6 +18,16 @@ service cloud.firestore {
     // The signed-in user can read and write only their own profile document.
     match /users/{uid} {
       allow read, write: if isOwner(uid);
+
+      // users/{uid}/bookmarks/{bookmarkId}: client-created saved links
+      // (uid, title, url, createdAt, updatedAt, lastCheckedAt). Ownership is
+      // structural — the {uid} path segment scopes the document to its owner —
+      // so every read and write (create, update, delete) simply requires the
+      // caller to own that path. Subcollection rules don't inherit from the
+      // parent match, hence this explicit nested block.
+      match /bookmarks/{bookmarkId} {
+        allow read, write: if isOwner(uid);
+      }
     }
 
     // devices/{deviceId}: registered FCM tokens (uid, fcmToken, platform).
@@ -31,10 +41,11 @@ service cloud.firestore {
     }
 
     // notifications/{notificationId}: inbox documents
-    // (uid, title, message, category, status, read, createdAt).
+    // (uid, title, message, category, status, read, bookmarked, createdAt).
     // Created only server-side by the webhook function. Clients may read their
-    // own notifications, update read state, and delete them — but not create
-    // or forge them.
+    // own notifications, update client-owned state (read, bookmarked), and
+    // delete them — but not create or forge them. The update rule pins `uid`, so
+    // a client can flip these flags but can never reassign a document's owner.
     match /notifications/{notificationId} {
       allow read, delete: if isOwner(resource.data.uid);
       allow update: if isOwner(resource.data.uid)
