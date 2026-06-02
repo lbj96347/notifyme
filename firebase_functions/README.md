@@ -56,6 +56,32 @@ defaulting to `general` when omitted (well-known: `claude`, `codex`, `ci`,
 `github-actions`, `n8n`, `bash`, `general`). `url` (`http(s)`) makes the
 notification tappable. See `src/validation.ts` for the authoritative rules.
 
+### Atlassian Statuspage payloads (`src/statuspage.ts`)
+
+The handler also accepts [Atlassian Statuspage](https://www.atlassian.com/software/statuspage)
+webhooks, which arrive in a nested shape rather than the flat contract above.
+`normalizeWebhookBody` detects them and rewrites them into the flat contract
+**before** validation, so the rest of the flow (validate → persist → push) is
+unchanged. Detection is conservative: a body with a top-level `title` or
+`message` is treated as a native flat payload and passed through untouched, and
+an unrecognized body is left for `validatePayload` to reject — so existing
+senders are never affected.
+
+Two payload kinds are normalized, both stamped with `category: "statuspage"`:
+
+- **Incident** (top-level `incident` object) — `title` is the incident name +
+  lifecycle status, `message` is the latest `incident_updates[].body`, `url` is
+  the incident `shortlink`. `status` color derives from the lifecycle status and
+  impact: `resolved` → success, `postmortem` → info, `monitoring` → warning;
+  an active incident (`investigating`/`identified`) maps by impact —
+  `critical`/`major` → error, `minor` → warning, `none`/`maintenance` → info,
+  defaulting to warning.
+- **Component update** (top-level `component_update` / `component`) — `title` and
+  `message` describe the component's status transition. `status` color derives
+  from the new component status: `operational` → success,
+  `degraded_performance`/`partial_outage` → warning, `major_outage` → error,
+  `under_maintenance` → info.
+
 ## Webhook token → uid resolution
 
 The `{userToken}` path segment is the **routing key**: it tells the function

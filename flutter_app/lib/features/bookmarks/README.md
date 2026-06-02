@@ -28,11 +28,10 @@ Laid out as a self-contained feature module:
   edit/delete overflow menu, the shared create/edit dialog (`BookmarkEditDialog`,
   a pure input form reused for both the **+** button and the row's Edit action),
   and the empty/error state.
-- `screens/` — `BookmarksScreen`, the tab hosted by `app/home_page.dart`, and
-  `BrowserScreen`, the in-app browser that tapping a row opens the saved link in.
-  Built on `webview_flutter`, it offers back/forward (enabled only when there's
-  history), reload, a load-progress bar, and a close button; the system back
-  gesture walks the page history before popping the screen.
+- `screens/` — `BookmarksScreen`, the tab hosted by `app/home_page.dart`.
+  Tapping a row opens the saved link in an in-app browser view via
+  `url_launcher`'s `launchUrl(..., mode: LaunchMode.inAppBrowserView)` (Custom
+  Tabs on Android, `SFSafariViewController` on iOS).
 
 Reads/writes are scoped to the caller's own `uid` by the document path, mirroring
 the Firestore rules: the `users/{uid}/bookmarks/{bookmarkId}` match grants

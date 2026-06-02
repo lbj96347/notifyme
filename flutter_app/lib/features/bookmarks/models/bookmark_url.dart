@@ -1,8 +1,8 @@
 /// Whether [url] is acceptable as a bookmark's link.
 ///
 /// A bookmark link must parse and carry both a scheme and an authority (host) —
-/// e.g. `https://example.com` — which is exactly what `BrowserScreen` needs to
-/// load it with `Uri.parse`. Surrounding whitespace is ignored; `null`, empty,
+/// e.g. `https://example.com` — which is exactly what `launchUrl` needs to
+/// open it in an in-app browser view. Surrounding whitespace is ignored; `null`, empty,
 /// scheme-less (`example.com`) and authority-less (`mailto:a@b.com`) strings are
 /// all rejected.
 ///

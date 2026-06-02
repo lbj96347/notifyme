@@ -20,12 +20,17 @@
  * Webhook payload contract (kept in sync with the Flutter app and examples/):
  *   { "title": "...", "message": "...", "category": "claude",
  *     "status": "success", "url": "https://..." }
+ *
+ * Atlassian Statuspage webhooks arrive in a nested, non-flat shape; they are
+ * normalized into the flat contract above by `normalizeWebhookBody` (see
+ * `./statuspage`) *before* validation, so the rest of the flow is unchanged.
  */
 import { onRequest } from "firebase-functions/v2/https";
 import type { Request } from "firebase-functions/v2/https";
 import type { Response } from "express";
 import { resolveUserToken } from "./token";
 import { validatePayload } from "./validation";
+import { normalizeWebhookBody } from "./statuspage";
 import { createNotification } from "./notifications";
 import { sendToDevices } from "./messaging";
 import type { SendResult } from "./messaging";
@@ -109,7 +114,9 @@ export async function handleWebhook(
     return;
   }
 
-  const validation = validatePayload(req.body);
+  // Statuspage payloads are rewritten into the flat contract here; a native
+  // flat (or unrecognized) body passes through untouched.
+  const validation = validatePayload(normalizeWebhookBody(req.body));
   if (!validation.ok) {
     sendJson(res, 400, {
       ok: false,

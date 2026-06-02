@@ -37,3 +37,23 @@ the examples below use are `claude`, `codex`, `ci`, `github-actions`, `n8n`,
 - [`bash/`](bash/) — plain `curl` from a shell script
 
 > Any change to the payload contract must be reflected in every example here.
+
+## Atlassian Statuspage payloads
+
+Besides the native contract above, the webhook also accepts the nested payload
+emitted by [Atlassian Statuspage](https://www.atlassian.com/software/statuspage)
+status pages — including Claude's [status.claude.com](https://status.claude.com).
+You don't send these yourself; you subscribe a status page to your webhook URL
+and it POSTs incident and component-update events, which NotifyMe normalizes into
+the native contract automatically.
+
+To subscribe to Claude status updates:
+
+1. Open [status.claude.com](https://status.claude.com).
+2. Click **Subscribe to updates** and choose the **Webhook** option.
+3. Paste your NotifyMe webhook URL
+   (`https://<your-region>-<your-project>.cloudfunctions.net/webhook/<userToken>`).
+4. Enter an email address (Statuspage uses it to alert you if webhook delivery
+   fails) and confirm.
+
+The same steps work for any Statuspage-powered status page.

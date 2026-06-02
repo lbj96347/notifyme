@@ -40,9 +40,6 @@ dependencies:
   firebase_messaging: ^15.2.8
   firebase_analytics: ^11.5.1
   url_launcher: ^6.3.2
-  # In-app browser for notification links (the webhook `url` field). Renders
-  # pages inside the app instead of bouncing out to an external browser.
-  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:

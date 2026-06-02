@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/bookmark.dart';
 import '../models/bookmark_day_group.dart';
 import '../models/bookmark_url.dart';
 import '../repository/bookmark_repository.dart';
-import '../screens/browser_screen.dart';
 
 /// Presentation for the day-grouped bookmarks list and its rows.
 ///
 /// The Bookmarks tab renders saved links: each row shows the title, the link
 /// itself, the time it was saved, and — once revisited — when it was last
-/// checked. Tapping the body opens the link in the in-app browser (and stamps
-/// `lastCheckedAt`, as does manually reloading the page there); the trailing
+/// checked. Tapping the body opens the link in an in-app browser view (and
+/// stamps `lastCheckedAt`); the trailing
 /// overflow menu edits the title/url or deletes
 /// the bookmark via [BookmarkRepository], scoped to [uid]. Every change
 /// propagates back through the Firestore stream the screen is watching, so the
@@ -100,7 +100,7 @@ class _DayHeader extends StatelessWidget {
 
 /// A single saved-link row: a link icon, the title and URL, the saved time, the
 /// last-checked time (once revisited), and an overflow menu to edit or delete.
-/// Tapping the body opens the link in the in-app browser.
+/// Tapping the body opens the link in an in-app browser view.
 class BookmarkTile extends StatelessWidget {
   const BookmarkTile({
     super.key,
@@ -193,11 +193,11 @@ class BookmarkTile extends StatelessWidget {
     );
   }
 
-  /// Opens the bookmark's link in the in-app [BrowserScreen], stamping
-  /// `lastCheckedAt`, and surfaces a SnackBar if the URL is malformed.
+  /// Opens the bookmark's link in an in-app browser view, stamping
+  /// `lastCheckedAt`, and surfaces a SnackBar if the URL is malformed or can't
+  /// be opened.
   Future<void> _open(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     final trimmed = bookmark.url.trim();
     if (!isValidBookmarkUrl(trimmed)) {
       messenger.showSnackBar(
@@ -211,19 +211,16 @@ class BookmarkTile extends StatelessWidget {
     } catch (_) {
       // Ignore — opening the link is what the user asked for.
     }
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) => BrowserScreen(
-          initialUrl: trimmed,
-          title: bookmark.title.isEmpty ? null : bookmark.title,
-          // A manual reload is the user re-checking the page, so re-stamp the
-          // last-checked time. Best-effort: swallow failures like the open path.
-          onManualRefresh: () {
-            repository.touchLastChecked(uid, bookmark.id).catchError((_) {});
-          },
-        ),
-      ),
-    );
+    var launched = false;
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null) {
+      launched = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    }
+    if (!launched) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Couldn’t open ${bookmark.url}')),
+      );
+    }
   }
 }
 

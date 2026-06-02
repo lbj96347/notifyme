@@ -83,6 +83,40 @@ examples. Keep all three in sync when it changes.
 - `url` — optional; makes the notification tappable to open a PR, session, or
   dashboard.
 
+### Supported payload formats
+
+The webhook accepts two payload shapes on the same URL — no configuration or
+separate endpoint needed:
+
+- **Native JSON** — the flat contract above. Use this for your own scripts and
+  the senders in [`examples/`](examples/).
+- **Atlassian Statuspage** — the nested webhook format emitted by
+  [Statuspage](https://www.atlassian.com/software/statuspage)-powered status
+  pages, such as Claude's [status.claude.com](https://status.claude.com). The
+  function detects these (incident and component-update events), normalizes them
+  into the native contract — mapping incident/component severity to a status
+  color and pulling through the incident title, latest update, and shortlink —
+  then runs the same validate → persist → push flow. Detection is conservative,
+  so native senders are never affected. See
+  [`firebase_functions/README.md`](firebase_functions/README.md#atlassian-statuspage-payloads-srcstatuspagets)
+  for the exact mapping.
+
+#### Subscribe to Claude status updates
+
+To get Claude service incidents pushed to your phone:
+
+1. Open [status.claude.com](https://status.claude.com).
+2. Click **Subscribe to updates**.
+3. Choose the **Webhook** option (the **{ }** / webhook icon).
+4. Paste your NotifyMe webhook URL
+   (`https://<your-region>-<your-project>.cloudfunctions.net/webhook/<userToken>`).
+5. Enter an email address — Statuspage uses it to notify you if webhook delivery
+   fails — and confirm the subscription.
+
+New Claude incidents and component status changes now arrive as NotifyMe
+notifications, color-coded by severity. The same steps work for any other
+Statuspage-powered status page.
+
 ## Repository layout
 
 ```

@@ -204,6 +204,55 @@ test("handleWebhook writes, pushes, and returns 201 for a valid payload", async 
   assert.deepEqual(deps.pushed, [{ uid: "user-1", id: "note-123" }]);
 });
 
+test("handleWebhook normalizes a Statuspage incident payload end-to-end", async () => {
+  // A nested Statuspage incident body (no top-level title/message) is rewritten
+  // into the flat contract before validation, then written and pushed normally.
+  const deps = fakeDeps();
+  const res = stubResponse();
+  await handleWebhook(
+    stubRequest("POST", "/valid_token_123456", {
+      page: { id: "pg1" },
+      incident: {
+        name: "API latency elevated",
+        status: "investigating",
+        impact: "major",
+        shortlink: "http://stspg.io/abc123",
+        incident_updates: [{ body: "We are investigating.", status: "investigating" }],
+      },
+    }),
+    res,
+    deps,
+  );
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(deps.created.length, 1);
+  const payload = deps.created[0].payload;
+  assert.equal(payload.title, "API latency elevated — investigating");
+  assert.equal(payload.message, "We are investigating.");
+  assert.equal(payload.category, "statuspage");
+  assert.equal(payload.status, "error");
+  assert.equal(payload.url, "http://stspg.io/abc123");
+});
+
+test("handleWebhook still accepts a native flat payload (Statuspage support is additive)", async () => {
+  const deps = fakeDeps();
+  const res = stubResponse();
+  await handleWebhook(
+    stubRequest("POST", "/valid_token_123456", {
+      title: "Build passed",
+      message: "main is green",
+      category: "ci",
+      status: "success",
+    }),
+    res,
+    deps,
+  );
+  assert.equal(res.statusCode, 201);
+  assert.equal(deps.created.length, 1);
+  assert.equal(deps.created[0].payload.title, "Build passed");
+  assert.equal(deps.created[0].payload.category, "ci");
+});
+
 test("handleWebhook still returns 201 when the push fails (best-effort)", async () => {
   // A delivery failure must not fail the request: the notification is persisted.
   const deps = fakeDeps({
