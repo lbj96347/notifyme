@@ -37,12 +37,16 @@ export const FCM_TOKEN_FIELD = "fcmToken";
  * document should be pruned. Everything else (e.g. `messaging/internal-error`,
  * `messaging/server-unavailable`) is treated as transient and left alone.
  *
+ * NOTE: `messaging/invalid-argument` is intentionally NOT here. It is ambiguous —
+ * FCM returns it for a bad/oversized *payload* just as often as for a bad token —
+ * so pruning on it would delete a perfectly good device because of one oversized
+ * message, silently disabling all future notifications. Treat it as transient.
+ *
  * See https://firebase.google.com/docs/cloud-messaging/manage-tokens
  */
 const UNREGISTERED_ERROR_CODES = new Set<string>([
   "messaging/registration-token-not-registered",
   "messaging/invalid-registration-token",
-  "messaging/invalid-argument",
 ]);
 
 /** Summary of a push attempt, returned for logging. */

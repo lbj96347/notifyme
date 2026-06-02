@@ -57,7 +57,9 @@ class _AuthGateState extends State<AuthGate> {
           // the backfill; swallow+log failures (e.g. rules not yet deployed) so
           // they don't surface as an unhandled async error — the Settings
           // screen's "being set up" state already communicates the pending URL.
-          widget.authService.ensureUserDocument(user).catchError(
+          widget.authService
+              .ensureUserDocument(user)
+              .catchError(
                 (Object e) => debugPrint('ensureUserDocument failed: $e'),
               );
         }

@@ -18,8 +18,8 @@ import 'package:flutter/foundation.dart';
 
 class DeviceService {
   DeviceService({FirebaseMessaging? messaging, FirebaseFirestore? firestore})
-      : _messaging = messaging ?? FirebaseMessaging.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+    : _messaging = messaging ?? FirebaseMessaging.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseMessaging _messaging;
   final FirebaseFirestore _firestore;

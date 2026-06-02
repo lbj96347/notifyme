@@ -41,7 +41,7 @@ class _FakeUser implements User {
 
 class _FakeAuthService extends AuthService {
   _FakeAuthService()
-      : super(auth: _UnusedFirebaseAuth(), firestore: _UnusedFirestore());
+    : super(auth: _UnusedFirebaseAuth(), firestore: _UnusedFirestore());
 
   @override
   User? get currentUser => _FakeUser();
@@ -49,7 +49,7 @@ class _FakeAuthService extends AuthService {
 
 class _FakeNotificationRepository extends NotificationRepository {
   _FakeNotificationRepository(this._notifications)
-      : super(firestore: _UnusedFirestore());
+    : super(firestore: _UnusedFirestore());
 
   final List<AppNotification> _notifications;
 
@@ -59,8 +59,9 @@ class _FakeNotificationRepository extends NotificationRepository {
 }
 
 void main() {
-  testWidgets('renders the empty state when there are no notifications',
-      (tester) async {
+  testWidgets('renders the empty state when there are no notifications', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: NotificationInboxScreen(
@@ -72,8 +73,10 @@ void main() {
     await tester.pump(); // let the stream deliver the empty list
 
     expect(find.text('No notifications yet'), findsOneWidget);
-    expect(find.text('POST to your webhook URL and it’ll show up here.'),
-        findsOneWidget);
+    expect(
+      find.text('POST to your webhook URL and it’ll show up here.'),
+      findsOneWidget,
+    );
     expect(find.byIcon(Icons.notifications_none), findsOneWidget);
   });
 }

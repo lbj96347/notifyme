@@ -11,7 +11,7 @@ import 'notification_model.dart';
 /// caller's own `uid`.
 class NotificationRepository {
   NotificationRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -36,18 +36,14 @@ class NotificationRepository {
   ///
   /// [limit] caps how many are fetched (defaults to 100) so the inbox stays
   /// bounded; pass a larger value or `null` to remove the cap.
-  Stream<List<AppNotification>> watchForUser(
-    String uid, {
-    int? limit = 100,
-  }) {
+  Stream<List<AppNotification>> watchForUser(String uid, {int? limit = 100}) {
     var query = _queryForUser(uid);
     if (limit != null) {
       query = query.limit(limit);
     }
     return query.snapshots().map(
-          (snapshot) =>
-              snapshot.docs.map(AppNotification.fromSnapshot).toList(),
-        );
+      (snapshot) => snapshot.docs.map(AppNotification.fromSnapshot).toList(),
+    );
   }
 
   /// One-shot fetch of the user's notifications, newest first.
@@ -94,6 +90,29 @@ class NotificationRepository {
       return;
     }
     await ref.update({'read': true});
+  }
+
+  /// Sets the bookmark (starred) state of a single notification.
+  ///
+  /// Like [markRead], it touches only the one field — leaving webhook-owned
+  /// fields and `read` intact — and the [uid] guard means a caller can never
+  /// flip a document that isn't theirs (mirroring the Firestore rule that
+  /// scopes writes to the signed-in user). A no-op when the document is missing,
+  /// belongs to another user, or is already in the requested state.
+  Future<void> setBookmark(
+    String uid,
+    String notificationId, {
+    required bool bookmarked,
+  }) async {
+    final ref = _notifications.doc(notificationId);
+    final snapshot = await ref.get();
+    final data = snapshot.data();
+    if (data == null ||
+        data['uid'] != uid ||
+        (data['bookmarked'] as bool? ?? false) == bookmarked) {
+      return;
+    }
+    await ref.update({'bookmarked': bookmarked});
   }
 
   /// Firestore caps a single `WriteBatch` at 500 operations, so unread

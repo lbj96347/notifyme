@@ -73,7 +73,7 @@ test("buildMulticastMessage sets notification title/body and data payload", () =
   assert.equal(message.data?.url, "https://github.com/acme/app/pull/1");
 });
 
-test("unregisteredTokenIndexes flags unregistered and invalid tokens", () => {
+test("unregisteredTokenIndexes flags only genuinely dead tokens", () => {
   const responses: SendResponse[] = [
     { success: true, messageId: "m0" },
     {
@@ -84,9 +84,8 @@ test("unregisteredTokenIndexes flags unregistered and invalid tokens", () => {
       success: false,
       error: makeError("messaging/invalid-registration-token"),
     },
-    { success: false, error: makeError("messaging/invalid-argument") },
   ];
-  assert.deepEqual(unregisteredTokenIndexes(responses), [1, 2, 3]);
+  assert.deepEqual(unregisteredTokenIndexes(responses), [1, 2]);
 });
 
 test("unregisteredTokenIndexes ignores transient failures and successes", () => {
@@ -94,6 +93,8 @@ test("unregisteredTokenIndexes ignores transient failures and successes", () => 
     { success: true, messageId: "m0" },
     { success: false, error: makeError("messaging/internal-error") },
     { success: false, error: makeError("messaging/server-unavailable") },
+    // Ambiguous (often a bad/oversized payload) — must NOT prune the device.
+    { success: false, error: makeError("messaging/invalid-argument") },
   ];
   assert.deepEqual(unregisteredTokenIndexes(responses), []);
 });

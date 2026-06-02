@@ -21,7 +21,7 @@ external system → Cloud Function (webhook/{userToken}) → Firestore (notifica
 Three pieces and how they connect:
 
 - **`firebase_functions/`** — A Cloud Function exposes `POST /webhook/{userToken}`. It resolves `userToken` to a `uid`, writes a notification document to Firestore, looks up that user's device FCM tokens, and sends the push via FCM. This is the only externally-reachable surface; treat the `userToken` as the routing key (and, in v2, the auth secret via `Authorization: Bearer`).
-- **Firestore** — Three top-level collections, all keyed by `uid`: `users` (uid, email, createdAt), `devices` (uid, fcmToken, platform), `notifications` (uid, title, message, category, status, read, createdAt). Security rules must scope every read/write to the authenticated user's own `uid`.
+- **Firestore** — Three top-level collections, all keyed by `uid`: `users` (uid, email, createdAt), `devices` (uid, fcmToken, platform), `notifications` (uid, title, message, category, status, read, bookmarked, createdAt). Security rules must scope every read/write to the authenticated user's own `uid`.
 - **`flutter_app/`** — Uses Firebase Auth (sign-in), Firestore (inbox/search/read state), Firebase Messaging (registers the device FCM token into `devices`, receives pushes), and Analytics. Features: notification inbox grouped by day, categories with status colors (green=success, red=error, yellow=warning, blue=info), search, and mark-read / mark-all-read.
 
 ### Webhook payload contract

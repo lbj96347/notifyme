@@ -35,7 +35,8 @@ void main() async {
     // appId doesn't match the expected format — that's an Objective-C exception
     // which bypasses this try/catch and SIGABRTs the process. Detect the
     // template values up-front so we render the diagnostic screen instead.
-    if (options.appId.startsWith('YOUR_') || options.apiKey.startsWith('YOUR_')) {
+    if (options.appId.startsWith('YOUR_') ||
+        options.apiKey.startsWith('YOUR_')) {
       throw StateError(
         'firebase_options.dart still contains placeholder values. '
         'Run `flutterfire configure` to generate real values for your project.',
@@ -47,7 +48,9 @@ void main() async {
     firebaseError = e.toString();
   }
 
-  runApp(NotifyMeApp(firebaseReady: firebaseReady, firebaseError: firebaseError));
+  runApp(
+    NotifyMeApp(firebaseReady: firebaseReady, firebaseError: firebaseError),
+  );
 }
 
 class NotifyMeApp extends StatelessWidget {
@@ -111,7 +114,11 @@ class _FirebaseErrorScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.error_outline, size: 72, color: theme.colorScheme.error),
+              Icon(
+                Icons.error_outline,
+                size: 72,
+                color: theme.colorScheme.error,
+              ),
               const SizedBox(height: 16),
               Text(
                 'Firebase not configured',

@@ -101,9 +101,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await widget.authService.signOut();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not sign out: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not sign out: $e')));
     }
   }
 
@@ -171,8 +171,9 @@ class _WebhookSection extends StatelessWidget {
         Text(
           'POST notifications to this URL and they arrive on your phone. '
           'Keep it secret — anyone with this URL can notify you.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 16),
         Card(
@@ -198,8 +199,9 @@ class _WebhookSection extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           'Send yourself a test notification from a terminal:',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 8),
         Card(
@@ -246,9 +248,11 @@ class _Message extends StatelessWidget {
           children: [
             Icon(icon, size: 56, color: color),
             const SizedBox(height: 16),
-            Text(text,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge,
+            ),
           ],
         ),
       ),

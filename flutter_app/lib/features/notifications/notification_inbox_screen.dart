@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/notification_status.dart';
 import '../auth/auth_service.dart';
 import 'notification_date_group.dart';
-import 'notification_detail_screen.dart';
+import 'notification_list.dart';
 import 'notification_model.dart';
 import 'notification_repository.dart';
 
@@ -66,7 +65,7 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
 
     if (user == null) {
       return const _InboxScaffold(
-        body: _EmptyState(
+        body: NotificationEmptyState(
           icon: Icons.lock_outline,
           title: 'Not signed in',
           subtitle: 'Sign in to see your notifications.',
@@ -106,7 +105,7 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
         stream: repository.watchForUser(user.uid),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const _EmptyState(
+            return const NotificationEmptyState(
               icon: Icons.error_outline,
               title: 'Couldn’t load notifications',
               subtitle: 'Check your connection and try again.',
@@ -118,7 +117,7 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
 
           final notifications = snapshot.data ?? const <AppNotification>[];
           if (notifications.isEmpty) {
-            return const _EmptyState(
+            return const NotificationEmptyState(
               icon: Icons.notifications_none,
               title: 'No notifications yet',
               subtitle: 'POST to your webhook URL and it’ll show up here.',
@@ -127,7 +126,7 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
 
           final matches = _filter(notifications, _query);
           if (matches.isEmpty) {
-            return _EmptyState(
+            return NotificationEmptyState(
               icon: Icons.search_off,
               title: 'No matches',
               subtitle: 'Nothing matches “${_searchController.text}”.',
@@ -135,7 +134,11 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
           }
 
           final groups = NotificationDateGroup.groupByDay(matches);
-          return _GroupedInboxList(groups: groups);
+          return NotificationGroupedList(
+            groups: groups,
+            uid: user.uid,
+            repository: repository,
+          );
         },
       ),
     );
@@ -233,249 +236,6 @@ class _InboxScaffold extends StatelessWidget {
         actions: actions,
       ),
       body: body,
-    );
-  }
-}
-
-/// Renders the day-grouped list: a sticky-feeling header per day followed by
-/// its notification rows.
-class _GroupedInboxList extends StatelessWidget {
-  const _GroupedInboxList({required this.groups});
-
-  final List<NotificationDateGroup> groups;
-
-  @override
-  Widget build(BuildContext context) {
-    // Flatten groups into a single index space: one header item per group
-    // followed by its rows. This keeps the whole inbox lazily built by a
-    // single ListView rather than nesting scrollables.
-    final items = <_InboxItem>[];
-    for (final group in groups) {
-      items.add(_HeaderItem(group.label));
-      for (final n in group.notifications) {
-        items.add(_RowItem(n));
-      }
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 24),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        if (item is _HeaderItem) {
-          return _DayHeader(label: item.label);
-        }
-        return _NotificationTile(notification: (item as _RowItem).notification);
-      },
-    );
-  }
-}
-
-/// Marker types for the flattened header/row list.
-abstract class _InboxItem {
-  const _InboxItem();
-}
-
-class _HeaderItem extends _InboxItem {
-  const _HeaderItem(this.label);
-  final String label;
-}
-
-class _RowItem extends _InboxItem {
-  const _RowItem(this.notification);
-  final AppNotification notification;
-}
-
-class _DayHeader extends StatelessWidget {
-  const _DayHeader({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Text(
-        label,
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.3,
-        ),
-      ),
-    );
-  }
-}
-
-class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.notification});
-
-  final AppNotification notification;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final status = NotificationStatus.fromWire(notification.status);
-    final unread = !notification.read;
-    final created = notification.createdAt;
-
-    return Material(
-      // Unread rows get a faint tint so the eye lands on them first.
-      color: unread ? status.color.withValues(alpha: 0.06) : Colors.transparent,
-      child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) =>
-                NotificationDetailScreen(notification: notification),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Status color rail.
-              Container(
-                width: 4,
-                height: 40,
-                margin: const EdgeInsets.only(top: 2, right: 12),
-                decoration: BoxDecoration(
-                  color: status.color,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            notification.title.isEmpty
-                                ? '(no title)'
-                                : notification.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: unread
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        if (unread)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.only(left: 8, top: 4),
-                            decoration: BoxDecoration(
-                              color: status.color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                    if (notification.message.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        notification.message,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        _CategoryChip(
-                          label: notification.category,
-                          color: status.color,
-                        ),
-                        const Spacer(),
-                        if (created != null)
-                          Text(
-                            NotificationDateGroup.formatTime(created),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 56, color: theme.colorScheme.outline),
-            const SizedBox(height: 16),
-            Text(title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

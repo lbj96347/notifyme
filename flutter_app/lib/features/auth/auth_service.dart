@@ -22,8 +22,8 @@ class AuthException implements Exception {
 
 class AuthService {
   AuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
-      : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+    : _auth = auth ?? FirebaseAuth.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -88,10 +88,7 @@ class AuthService {
     final ref = _firestore.collection('users').doc(user.uid);
     await _firestore.runTransaction((tx) async {
       final snapshot = await tx.get(ref);
-      final data = <String, dynamic>{
-        'uid': user.uid,
-        'email': user.email,
-      };
+      final data = <String, dynamic>{'uid': user.uid, 'email': user.email};
 
       if (!snapshot.exists) {
         // First sign-in: stamp creation time and mint the webhook token.

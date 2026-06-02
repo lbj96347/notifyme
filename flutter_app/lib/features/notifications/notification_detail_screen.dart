@@ -38,6 +38,10 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
   /// without needing the inbox stream to round-trip back into this screen.
   late bool _read = widget.notification.read;
 
+  /// Tracks bookmark state locally so the AppBar star reflects taps immediately,
+  /// without waiting for the inbox stream to round-trip back into this screen.
+  late bool _bookmarked = widget.notification.bookmarked;
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +60,32 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
     }
   }
 
+  /// Stars/unstars this notification. Flips local state optimistically so the
+  /// AppBar icon responds instantly, then persists via the repository (scoped to
+  /// the signed-in user); on failure it rolls back and surfaces a SnackBar.
+  Future<void> _toggleBookmark() async {
+    final user = (widget._authService ?? AuthService()).currentUser;
+    if (user == null) return;
+    final repository = widget._repository ?? NotificationRepository();
+    final next = !_bookmarked;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _bookmarked = next);
+    try {
+      await repository.setBookmark(
+        user.uid,
+        widget.notification.id,
+        bookmarked: next,
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() => _bookmarked = !next);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Couldn’t update bookmark.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final notification = widget.notification;
@@ -65,7 +95,16 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
     final hasUrl = url != null && url.trim().isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Notification')),
+      appBar: AppBar(
+        title: const Text('Notification'),
+        actions: [
+          IconButton(
+            icon: Icon(_bookmarked ? Icons.bookmark : Icons.bookmark_border),
+            tooltip: _bookmarked ? 'Remove bookmark' : 'Bookmark',
+            onPressed: _toggleBookmark,
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
         children: [

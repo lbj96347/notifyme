@@ -32,7 +32,7 @@ class _UnusedFirestore implements FirebaseFirestore {
 
 class _FakeAuthService extends AuthService {
   _FakeAuthService(this._stream)
-      : super(auth: _UnusedFirebaseAuth(), firestore: _UnusedFirestore());
+    : super(auth: _UnusedFirebaseAuth(), firestore: _UnusedFirestore());
 
   final Stream<User?> _stream;
 
@@ -41,8 +41,9 @@ class _FakeAuthService extends AuthService {
 }
 
 void main() {
-  testWidgets('shows a spinner while the first auth state is loading',
-      (tester) async {
+  testWidgets('shows a spinner while the first auth state is loading', (
+    tester,
+  ) async {
     // A stream that never emits keeps the StreamBuilder in the waiting state.
     final controller = StreamController<User?>();
     addTearDown(controller.close);
@@ -60,7 +61,9 @@ void main() {
   testWidgets('shows the AuthScreen when no user is signed in', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: AuthGate(authService: _FakeAuthService(Stream<User?>.value(null))),
+        home: AuthGate(
+          authService: _FakeAuthService(Stream<User?>.value(null)),
+        ),
       ),
     );
     await tester.pumpAndSettle();

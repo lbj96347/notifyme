@@ -43,9 +43,9 @@ class NotificationTapRouter {
     FirebaseMessaging? messaging,
     NotificationRepository? repository,
     GlobalKey<NavigatorState>? navigatorKey,
-  })  : _messaging = messaging ?? FirebaseMessaging.instance,
-        _repository = repository ?? NotificationRepository(),
-        _navigatorKey = navigatorKey ?? notificationNavigatorKey;
+  }) : _messaging = messaging ?? FirebaseMessaging.instance,
+       _repository = repository ?? NotificationRepository(),
+       _navigatorKey = navigatorKey ?? notificationNavigatorKey;
 
   final String uid;
   final FirebaseMessaging _messaging;

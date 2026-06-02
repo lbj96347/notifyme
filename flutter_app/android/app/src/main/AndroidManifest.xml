@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for FCM, Firestore, and the in-app WebView to reach the
+         network. The debug/profile manifests declare this too, but release
+         builds only merge from this main manifest. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="notifyme"
         android:name="${applicationName}"

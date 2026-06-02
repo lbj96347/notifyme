@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../features/auth/auth_service.dart';
+import '../features/bookmarks/screens/bookmarks_screen.dart';
 import '../features/devices/device_service.dart';
 import '../features/notifications/notification_inbox_screen.dart';
 import '../features/notifications/notification_tap_router.dart';
@@ -9,20 +10,16 @@ import '../features/settings/settings_screen.dart';
 
 /// The app's main screen once the user is signed in.
 ///
-/// Hosts the two MVP surfaces — the notification inbox and settings (webhook
-/// URL) — behind a bottom navigation bar. The inbox is the default tab since
-/// it's where a tapped push lands.
+/// Hosts the app's surfaces — the notification inbox, bookmarks, and settings
+/// (webhook URL) — behind a bottom navigation bar. The inbox is the default tab
+/// since it's where a tapped push lands.
 ///
 /// Both the [authService] and the resolved [user] come from [AuthGate], which
 /// only builds this page when a user is signed in. They're passed down to the
 /// tabs so the inbox can scope its Firestore query to `user.uid` (via
 /// [authService]) and settings can load that user's webhook token.
 class HomePage extends StatefulWidget {
-  const HomePage({
-    super.key,
-    required this.authService,
-    required this.user,
-  });
+  const HomePage({super.key, required this.authService, required this.user});
 
   final AuthService authService;
   final User user;
@@ -70,6 +67,7 @@ class _HomePageState extends State<HomePage> {
     // Built here (not a `const` list) so each tab receives the signed-in user.
     final tabs = <Widget>[
       NotificationInboxScreen(authService: widget.authService),
+      BookmarksScreen(authService: widget.authService),
       SettingsScreen(uid: widget.user.uid, authService: widget.authService),
     ];
 
@@ -83,6 +81,11 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(Icons.notifications_outlined),
             selectedIcon: Icon(Icons.notifications),
             label: 'Inbox',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.bookmark_border),
+            selectedIcon: Icon(Icons.bookmark),
+            label: 'Bookmarks',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

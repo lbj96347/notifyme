@@ -19,6 +19,7 @@ class AppNotification {
     required this.category,
     required this.status,
     required this.read,
+    this.bookmarked = false,
     this.url,
     this.createdAt,
   });
@@ -37,6 +38,10 @@ class AppNotification {
 
   /// Whether the user has marked this notification read.
   final bool read;
+
+  /// Whether the user has bookmarked (starred) this notification so it stays
+  /// easy to find in the Bookmarks tab.
+  final bool bookmarked;
 
   /// Optional deep link; when set the notification is tappable.
   final String? url;
@@ -59,6 +64,7 @@ class AppNotification {
       category: data['category'] as String? ?? defaultNotificationCategory,
       status: data['status'] as String? ?? NotificationStatus.info.name,
       read: data['read'] as bool? ?? false,
+      bookmarked: data['bookmarked'] as bool? ?? false,
       url: data['url'] as String?,
       createdAt: createdAt is Timestamp ? createdAt.toDate() : null,
     );
