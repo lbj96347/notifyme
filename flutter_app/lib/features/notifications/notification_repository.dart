@@ -2,6 +2,37 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'notification_model.dart';
 
+/// One page of the inbox plus the metadata a caller needs to fetch the next one.
+///
+/// [notifications] is the page itself (newest-first). [cursor] is the last
+/// document of the page — pass it back as `startAfter` to fetch the page that
+/// follows; it's `null` only when the page is empty. [hasMore] says whether a
+/// further page exists, so the UI knows when to stop requesting more (and can
+/// hide its "load more" affordance) without firing one last empty query.
+class NotificationPage {
+  const NotificationPage({
+    required this.notifications,
+    required this.cursor,
+    required this.hasMore,
+  });
+
+  /// An empty terminal page: nothing loaded, no cursor, nothing more to fetch.
+  static const NotificationPage empty = NotificationPage(
+    notifications: <AppNotification>[],
+    cursor: null,
+    hasMore: false,
+  );
+
+  final List<AppNotification> notifications;
+
+  /// The last document of this page, used as the `startAfter` cursor for the
+  /// next [NotificationRepository.fetchPage] call. `null` when the page is empty.
+  final DocumentSnapshot<Map<String, dynamic>>? cursor;
+
+  /// Whether at least one more notification exists after this page.
+  final bool hasMore;
+}
+
 /// Owns all Firestore access for the `notifications` collection.
 ///
 /// Keeping the query logic here (rather than inline in widgets) means the UI
@@ -57,6 +88,48 @@ class NotificationRepository {
     }
     final snapshot = await query.get();
     return snapshot.docs.map(AppNotification.fromSnapshot).toList();
+  }
+
+  /// Default number of notifications fetched per page by [fetchPage].
+  static const int defaultPageSize = 30;
+
+  /// Fetches one page of the user's notifications, newest first, for an
+  /// infinite-scroll inbox.
+  ///
+  /// Pass `startAfter: null` (the default) for the first page; for each
+  /// subsequent page, pass the previous page's [NotificationPage.cursor]. The
+  /// cursor is a [DocumentSnapshot] so Firestore's `startAfterDocument` can
+  /// resume exactly after it — stable even if documents are inserted between
+  /// fetches, unlike an offset.
+  ///
+  /// To know whether more pages exist without a second count query, this asks
+  /// Firestore for one extra document ([pageSize] + 1). If that extra row comes
+  /// back, [NotificationPage.hasMore] is `true` and the extra is trimmed off the
+  /// returned page; otherwise this is the last page.
+  ///
+  /// Uses the same `(uid ==, createdAt desc)` query as the inbox stream, so it
+  /// relies on the same composite index.
+  Future<NotificationPage> fetchPage(
+    String uid, {
+    int pageSize = defaultPageSize,
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+  }) async {
+    var query = _queryForUser(uid).limit(pageSize + 1);
+    if (startAfter != null) {
+      query = query.startAfterDocument(startAfter);
+    }
+    final docs = (await query.get()).docs;
+    if (docs.isEmpty) {
+      return NotificationPage.empty;
+    }
+
+    final hasMore = docs.length > pageSize;
+    final pageDocs = hasMore ? docs.sublist(0, pageSize) : docs;
+    return NotificationPage(
+      notifications: pageDocs.map(AppNotification.fromSnapshot).toList(),
+      cursor: pageDocs.last,
+      hasMore: hasMore,
+    );
   }
 
   /// Fetches a single notification by document id, scoped to [uid].

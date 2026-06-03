@@ -22,17 +22,60 @@ class NotificationGroupedList extends StatelessWidget {
     required this.groups,
     required this.uid,
     required this.repository,
+    this.isLoadingMore = false,
+    this.loadMoreError = false,
+    this.onRetryLoadMore,
+    this.hasReachedEnd = false,
+    this.canLoadMoreForSearch = false,
+    this.onLoadMore,
+    this.onChanged,
   });
 
   final List<NotificationDateGroup> groups;
   final String uid;
   final NotificationRepository repository;
 
+  /// When true, a footer spinner is appended — the cue that the next page is
+  /// being fetched as the user scrolls toward the bottom.
+  final bool isLoadingMore;
+
+  /// When true, the last attempt to load the next page failed; a footer with a
+  /// retry button is shown instead of the spinner. Takes precedence over
+  /// [isLoadingMore], [canLoadMoreForSearch] and [hasReachedEnd].
+  final bool loadMoreError;
+
+  /// Invoked by the load-more error footer's retry button. Required in practice
+  /// whenever [loadMoreError] can be true.
+  final VoidCallback? onRetryLoadMore;
+
+  /// When true (and not loading or erroring), a quiet "end of list" footer marks
+  /// that every page has been loaded — there's nothing more to fetch.
+  final bool hasReachedEnd;
+
+  /// When true, a search is active and more pages remain that haven't been
+  /// searched yet (client-side search only sees loaded pages). A "Load more
+  /// results" button footer is appended so the user can pull in further pages
+  /// to extend the search — a short filtered list often isn't tall enough to
+  /// trigger scroll-based auto-loading. Mutually exclusive with [hasReachedEnd],
+  /// which is suppressed while searching.
+  final bool canLoadMoreForSearch;
+
+  /// Invoked by the "Load more results" search footer. Required in practice
+  /// whenever [canLoadMoreForSearch] can be true.
+  final VoidCallback? onLoadMore;
+
+  /// Called with a row's id after it changes something the list can't see live
+  /// (a bookmark toggle, or the read flip when its detail screen opens), so the
+  /// hosting screen can reconcile just that row. Optional — when the list is
+  /// backed by a live stream there's nothing to do here.
+  final Future<void> Function(String id)? onChanged;
+
   @override
   Widget build(BuildContext context) {
     // Flatten groups into a single index space: one header item per group
-    // followed by its rows. This keeps the whole list lazily built by a single
-    // ListView rather than nesting scrollables.
+    // followed by its rows, plus an optional trailing footer. This keeps the
+    // whole list lazily built by a single ListView rather than nesting
+    // scrollables.
     final items = <_ListItem>[];
     for (final group in groups) {
       items.add(_HeaderItem(group.label));
@@ -40,8 +83,22 @@ class NotificationGroupedList extends StatelessWidget {
         items.add(_RowItem(n));
       }
     }
+    // At most one footer, in priority order: a load-more failure (offer a
+    // retry) wins over an in-flight spinner, which wins over the search
+    // "load more results" prompt, which wins over the end-of-list marker.
+    if (loadMoreError) {
+      items.add(const _FooterItem(_FooterKind.error));
+    } else if (isLoadingMore) {
+      items.add(const _FooterItem(_FooterKind.loading));
+    } else if (canLoadMoreForSearch) {
+      items.add(const _FooterItem(_FooterKind.searchLoadMore));
+    } else if (hasReachedEnd) {
+      items.add(const _FooterItem(_FooterKind.end));
+    }
 
     return ListView.builder(
+      // AlwaysScrollable so a short list can still be pulled to refresh.
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: items.length,
       itemBuilder: (context, index) {
@@ -49,10 +106,23 @@ class NotificationGroupedList extends StatelessWidget {
         if (item is _HeaderItem) {
           return _DayHeader(label: item.label);
         }
+        if (item is _FooterItem) {
+          switch (item.kind) {
+            case _FooterKind.loading:
+              return const _LoadMoreFooter();
+            case _FooterKind.error:
+              return _LoadMoreErrorFooter(onRetry: onRetryLoadMore);
+            case _FooterKind.searchLoadMore:
+              return _SearchLoadMoreFooter(onLoadMore: onLoadMore);
+            case _FooterKind.end:
+              return const _EndOfListFooter();
+          }
+        }
         return NotificationTile(
           notification: (item as _RowItem).notification,
           uid: uid,
           repository: repository,
+          onChanged: onChanged,
         );
       },
     );
@@ -72,6 +142,124 @@ class _HeaderItem extends _ListItem {
 class _RowItem extends _ListItem {
   const _RowItem(this.notification);
   final AppNotification notification;
+}
+
+/// Which trailing footer the list appends: a spinner while the next page loads,
+/// a retry prompt after a failed load, a "load more results" prompt to extend a
+/// client-side search over further pages, or an end-of-list marker once
+/// everything is loaded.
+enum _FooterKind { loading, error, searchLoadMore, end }
+
+class _FooterItem extends _ListItem {
+  const _FooterItem(this.kind);
+  final _FooterKind kind;
+}
+
+/// The footer spinner shown while the next page is loading.
+class _LoadMoreFooter extends StatelessWidget {
+  const _LoadMoreFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
+
+/// The footer shown when loading the next page failed: a short message and a
+/// retry button. The loaded rows above stay put, so this is a recoverable
+/// in-place error rather than a full-screen one.
+class _LoadMoreErrorFooter extends StatelessWidget {
+  const _LoadMoreErrorFooter({this.onRetry});
+
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Column(
+        children: [
+          Text(
+            'Couldn’t load more.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The footer shown during an active search when more pages remain to be
+/// loaded. Client-side search only sees pages already fetched, so this lets the
+/// user pull in further pages to extend the search — useful when the filtered
+/// list is too short to trigger scroll-based auto-loading.
+class _SearchLoadMoreFooter extends StatelessWidget {
+  const _SearchLoadMoreFooter({this.onLoadMore});
+
+  final VoidCallback? onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Column(
+        children: [
+          Text(
+            'Searching loaded notifications only.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onLoadMore,
+            icon: const Icon(Icons.expand_more, size: 18),
+            label: const Text('Load more results'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The quiet end-of-list marker shown once every page has been loaded.
+class _EndOfListFooter extends StatelessWidget {
+  const _EndOfListFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Center(
+        child: Text(
+          'You’re all caught up',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _DayHeader extends StatelessWidget {
@@ -105,11 +293,18 @@ class NotificationTile extends StatelessWidget {
     required this.notification,
     required this.uid,
     required this.repository,
+    this.onChanged,
   });
 
   final AppNotification notification;
   final String uid;
   final NotificationRepository repository;
+
+  /// Called with this row's id after it mutates state the host can't observe
+  /// live (a bookmark toggle, or the read flip the detail screen performs on
+  /// open) so the host can reconcile just this row. Null when the host watches a
+  /// live stream instead.
+  final Future<void> Function(String id)? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -122,12 +317,17 @@ class NotificationTile extends StatelessWidget {
       // Unread rows get a faint tint so the eye lands on them first.
       color: unread ? status.color.withValues(alpha: 0.06) : Colors.transparent,
       child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) =>
-                NotificationDetailScreen(notification: notification),
-          ),
-        ),
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  NotificationDetailScreen(notification: notification),
+            ),
+          );
+          // The detail screen marks the notification read on open; reconcile so
+          // the row drops its unread styling.
+          await onChanged?.call(notification.id);
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -210,6 +410,7 @@ class NotificationTile extends StatelessWidget {
                 notification: notification,
                 uid: uid,
                 repository: repository,
+                onChanged: onChanged,
               ),
             ],
           ),
@@ -227,11 +428,13 @@ class _BookmarkButton extends StatelessWidget {
     required this.notification,
     required this.uid,
     required this.repository,
+    this.onChanged,
   });
 
   final AppNotification notification;
   final String uid;
   final NotificationRepository repository;
+  final Future<void> Function(String id)? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -255,6 +458,8 @@ class _BookmarkButton extends StatelessWidget {
         notification.id,
         bookmarked: !notification.bookmarked,
       );
+      // Reconcile so the star reflects the new state (the list isn't live).
+      await onChanged?.call(notification.id);
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Couldn’t update bookmark.')),
@@ -302,11 +507,17 @@ class NotificationEmptyState extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.action,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+
+  /// Optional action shown below the subtitle — e.g. a "Load more results"
+  /// button on the no-matches search state, so an empty result with more pages
+  /// still loaded isn't a dead end.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -328,6 +539,7 @@ class NotificationEmptyState extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (action != null) ...[const SizedBox(height: 20), action!],
           ],
         ),
       ),

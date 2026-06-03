@@ -66,10 +66,12 @@ class _FakeQuery implements Query<Map<String, dynamic>> {
     String? orderByField,
     bool descending = false,
     int? limit,
+    String? startAfterId,
   }) : _filters = filters,
        _orderByField = orderByField,
        _descending = descending,
-       _limit = limit;
+       _limit = limit,
+       _startAfterId = startAfterId;
 
   final FakeFirestore _fs;
   final String _collectionPath;
@@ -77,6 +79,10 @@ class _FakeQuery implements Query<Map<String, dynamic>> {
   final String? _orderByField;
   final bool _descending;
   final int? _limit;
+
+  /// Id of the document the cursor sits after (set via [startAfterDocument]);
+  /// `null` means no cursor.
+  final String? _startAfterId;
 
   @override
   Query<Map<String, dynamic>> where(
@@ -109,6 +115,11 @@ class _FakeQuery implements Query<Map<String, dynamic>> {
   Query<Map<String, dynamic>> limit(int limit) => _copyWith(limit: limit);
 
   @override
+  Query<Map<String, dynamic>> startAfterDocument(
+    DocumentSnapshot<Object?> documentSnapshot,
+  ) => _copyWith(startAfterId: documentSnapshot.id);
+
+  @override
   Future<QuerySnapshot<Map<String, dynamic>>> get([
     GetOptions? options,
   ]) async => _FakeQuerySnapshot(_matching());
@@ -124,6 +135,7 @@ class _FakeQuery implements Query<Map<String, dynamic>> {
     String? orderByField,
     bool? descending,
     int? limit,
+    String? startAfterId,
   }) => _FakeQuery(
     _fs,
     _collectionPath,
@@ -131,6 +143,7 @@ class _FakeQuery implements Query<Map<String, dynamic>> {
     orderByField: orderByField ?? _orderByField,
     descending: descending ?? _descending,
     limit: limit ?? _limit,
+    startAfterId: startAfterId ?? _startAfterId,
   );
 
   /// Documents directly under [_collectionPath], filtered, ordered and capped.
@@ -158,6 +171,16 @@ class _FakeQuery implements Query<Map<String, dynamic>> {
     var docs = entries
         .map((e) => _FakeQueryDocSnapshot(_fs, e.key, _idOf(e.key), e.value))
         .toList();
+
+    // Cursor: drop everything up to and including the start-after document,
+    // matched by id within the already-ordered list (mirrors Firestore's
+    // startAfterDocument positioning for these single-orderBy queries).
+    final after = _startAfterId;
+    if (after != null) {
+      final at = docs.indexWhere((d) => d.id == after);
+      docs = at < 0 ? <_FakeQueryDocSnapshot>[] : docs.sublist(at + 1);
+    }
+
     final cap = _limit;
     if (cap != null && docs.length > cap) docs = docs.sublist(0, cap);
     return docs;

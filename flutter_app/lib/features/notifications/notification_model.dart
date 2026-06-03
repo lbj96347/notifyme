@@ -50,6 +50,29 @@ class AppNotification {
   /// while a freshly written document's `serverTimestamp()` resolves.
   final DateTime? createdAt;
 
+  /// Returns a copy with the user-mutable flags overridden.
+  ///
+  /// Only [read] and [bookmarked] are exposed because they're the only fields
+  /// the app changes after a notification is written; the webhook-owned content
+  /// (title/message/category/status/url) and server fields (uid/createdAt) are
+  /// always carried through unchanged. Lets the paginated inbox reflect a
+  /// mark-read or bookmark toggle on a single loaded row in place — without
+  /// refetching page one and collapsing the accumulated pages.
+  AppNotification copyWith({bool? read, bool? bookmarked}) {
+    return AppNotification(
+      id: id,
+      uid: uid,
+      title: title,
+      message: message,
+      category: category,
+      status: status,
+      read: read ?? this.read,
+      bookmarked: bookmarked ?? this.bookmarked,
+      url: url,
+      createdAt: createdAt,
+    );
+  }
+
   /// Builds a model from a Firestore document snapshot.
   factory AppNotification.fromSnapshot(
     DocumentSnapshot<Map<String, dynamic>> doc,

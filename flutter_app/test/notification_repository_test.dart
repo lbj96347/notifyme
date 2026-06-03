@@ -160,4 +160,126 @@ void main() {
       expect(list.length, 2);
     });
   });
+
+  group('fetchPage', () {
+    // Seeds n0..n[count-1] with ascending createdAt, so the newest-first page
+    // order is n[count-1], …, n1, n0.
+    void seedRun(int count, {String uid = 'me'}) {
+      for (var i = 0; i < count; i++) {
+        fs.seed(
+          'notifications/n$i',
+          note(uid: uid, createdAt: DateTime(2026, 5, 1, 0, i)),
+        );
+      }
+    }
+
+    test('first page returns newest-first with a cursor and hasMore', () async {
+      seedRun(5);
+      final page = await repo.fetchPage('me', pageSize: 2);
+
+      expect(page.notifications.map((n) => n.id).toList(), ['n4', 'n3']);
+      expect(page.hasMore, isTrue);
+      expect(page.cursor, isNotNull);
+      expect(page.cursor!.id, 'n3'); // last item of the page
+    });
+
+    test('next page resumes after the cursor', () async {
+      seedRun(5);
+      final first = await repo.fetchPage('me', pageSize: 2);
+      final second = await repo.fetchPage(
+        'me',
+        pageSize: 2,
+        startAfter: first.cursor,
+      );
+
+      expect(second.notifications.map((n) => n.id).toList(), ['n2', 'n1']);
+      expect(second.hasMore, isTrue);
+    });
+
+    test('last page reports hasMore false', () async {
+      seedRun(5);
+      final first = await repo.fetchPage('me', pageSize: 2);
+      final second = await repo.fetchPage(
+        'me',
+        pageSize: 2,
+        startAfter: first.cursor,
+      );
+      final third = await repo.fetchPage(
+        'me',
+        pageSize: 2,
+        startAfter: second.cursor,
+      );
+
+      expect(third.notifications.map((n) => n.id).toList(), ['n0']);
+      expect(third.hasMore, isFalse);
+    });
+
+    test('a page exactly filling pageSize reports hasMore false', () async {
+      seedRun(2);
+      final page = await repo.fetchPage('me', pageSize: 2);
+
+      expect(page.notifications.map((n) => n.id).toList(), ['n1', 'n0']);
+      expect(page.hasMore, isFalse);
+    });
+
+    test('empty result yields the terminal empty page', () async {
+      final page = await repo.fetchPage('me', pageSize: 2);
+
+      expect(page.notifications, isEmpty);
+      expect(page.cursor, isNull);
+      expect(page.hasMore, isFalse);
+    });
+
+    test('paging past the last document yields the terminal empty page', () async {
+      seedRun(2); // exactly one full page
+      final first = await repo.fetchPage('me', pageSize: 2);
+      expect(first.hasMore, isFalse);
+
+      // Resuming after the final cursor (e.g. a deletion left a dangling
+      // cursor) returns nothing more, not a stale repeat of the last page.
+      final past = await repo.fetchPage(
+        'me',
+        pageSize: 2,
+        startAfter: first.cursor,
+      );
+      expect(past.notifications, isEmpty);
+      expect(past.cursor, isNull);
+      expect(past.hasMore, isFalse);
+    });
+
+    test('hasMore is true only when a document exists beyond the page', () async {
+      // pageSize + 1 documents: the page fills exactly and exactly one more
+      // remains, so the +1 lookahead must report hasMore true (not the
+      // off-by-one false of treating a full page as the last).
+      seedRun(3);
+      final page = await repo.fetchPage('me', pageSize: 2);
+
+      expect(page.notifications.map((n) => n.id).toList(), ['n2', 'n1']);
+      expect(page.hasMore, isTrue);
+
+      final next = await repo.fetchPage('me', pageSize: 2, startAfter: page.cursor);
+      expect(next.notifications.map((n) => n.id).toList(), ['n0']);
+      expect(next.hasMore, isFalse);
+    });
+
+    test("only the caller's own notifications are paged", () async {
+      fs.seed(
+        'notifications/mine1',
+        note(uid: 'me', createdAt: DateTime(2026, 5, 1)),
+      );
+      fs.seed(
+        'notifications/mine2',
+        note(uid: 'me', createdAt: DateTime(2026, 5, 3)),
+      );
+      fs.seed(
+        'notifications/theirs',
+        note(uid: 'other', createdAt: DateTime(2026, 5, 2)),
+      );
+
+      final page = await repo.fetchPage('me', pageSize: 10);
+      expect(page.notifications.every((n) => n.uid == 'me'), isTrue);
+      expect(page.notifications.map((n) => n.id).toList(), ['mine2', 'mine1']);
+      expect(page.hasMore, isFalse);
+    });
+  });
 }
