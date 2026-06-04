@@ -1,5 +1,9 @@
 # NotifyMe
 
+<p align="center">
+  <img src="flutter_app/assets/icon/icon.png" alt="NotifyMe icon" width="120" />
+</p>
+
 A self-hosted alternative to Pushover / ntfy / Bark. NotifyMe gives every
 developer a personal webhook URL that pushes notifications straight to their
 phone.
@@ -255,6 +259,14 @@ curl -X POST "https://<your-region>-<your-project>.cloudfunctions.net/webhook/<u
   -H "Content-Type: application/json" \
   -d '{ "title": "Build finished", "message": "All tests passed", "category": "ci", "status": "success", "url": "https://github.com/you/repo/actions" }'
 ```
+
+## Built with
+
+NotifyMe's development was assisted by these tools:
+
+- **[WhisKey](https://whiskey.asktobuild.app/)** — used for quick on-device dictation of notes, commit messages, and issue descriptions.
+- **[TokKong](https://apps.apple.com/us/app/tokkong-local-ai/id6742748996)** — used for offline transcription and translation of reference material during development.
+- **[Lounge](https://lounge.asktobuild.app/)** — surfaced long-running build and agent jobs on the desktop, which informed NotifyMe's own notification flow.
 
 ## License
 
