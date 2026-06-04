@@ -12,6 +12,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'app/auth_gate.dart';
 import 'features/auth/auth_service.dart';
 import 'features/notifications/notification_tap_router.dart';
+import 'shared/retro_palette.dart';
 
 // GENERATED FILE — not committed. Run `flutterfire configure` to create it.
 // A committed template lives at `firebase_options.dart.example` so contributors
@@ -77,14 +78,22 @@ class NotifyMeApp extends StatelessWidget {
       // tree — taps arrive via FCM streams (see NotificationTapRouter), not the
       // UI, so there's no BuildContext to navigate from otherwise.
       navigatorKey: notificationNavigatorKey,
+      // The app is dark-forward to match the retro pager icon, so the retro
+      // palette drives both slots. See [RetroPalette] for the sampled colors.
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF2563EB),
-        brightness: Brightness.light,
+        colorScheme: RetroPalette.colorScheme,
+        scaffoldBackgroundColor: RetroPalette.background,
+        // Apply the retro LCD/terminal typeface app-wide. Setting fontFamily
+        // (rather than rebuilding the TextTheme) keeps every M3 text style's
+        // size, weight, and spacing intact, so only the glyphs change — no
+        // layout shifts. See [RetroPalette.fontFamily].
+        fontFamily: RetroPalette.fontFamily,
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF2563EB),
-        brightness: Brightness.dark,
+        colorScheme: RetroPalette.colorScheme,
+        scaffoldBackgroundColor: RetroPalette.background,
+        fontFamily: RetroPalette.fontFamily,
         useMaterial3: true,
       ),
       // When Firebase is configured, AuthGate decides between the sign-in

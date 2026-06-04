@@ -79,6 +79,18 @@ flutter:
   assets:
     - assets/icon/icon.png
 
+  # Retro/digital typeface for the whole app. Share Tech Mono is a terminal/LCD
+  # style monospace that echoes the pager's readout in the icon while staying
+  # legible at body sizes. Bundled as an asset (not fetched at runtime) so the
+  # self-hosted app has no external font dependency. Wired in via
+  # `RetroPalette.fontFamily` (see lib/shared/retro_palette.dart) and applied
+  # globally through ThemeData in main.dart. Ships a single Regular weight;
+  # Flutter synthesizes bolder weights where the theme asks for them.
+  fonts:
+    - family: ShareTechMono
+      fonts:
+        - asset: fonts/ShareTechMono-Regular.ttf
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
