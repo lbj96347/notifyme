@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:notifyme/features/notifications/notification_date_group.dart';
 import 'package:notifyme/features/notifications/notification_inbox_controller.dart';
@@ -82,12 +83,16 @@ void main() {
   late FakeFirestore fs;
   late _ScriptedRepository repo;
   late _RecordingHomeWidgetClient widget;
+  late StreamController<RemoteMessage> foreground;
 
   setUp(() {
     fs = FakeFirestore();
     repo = _ScriptedRepository(fs);
     widget = _RecordingHomeWidgetClient();
+    foreground = StreamController<RemoteMessage>.broadcast();
   });
+
+  tearDown(() => foreground.close());
 
   // Lets the fire-and-forget _syncWidget() future settle before assertions.
   Future<void> flushWidgetSync() => Future<void>.delayed(Duration.zero);
@@ -113,6 +118,7 @@ void main() {
         uid: uid,
         pageSize: pageSize,
         homeWidgetService: HomeWidgetService(client: widget),
+        foregroundMessages: foreground.stream,
       );
 
   group('loadInitial', () {
@@ -516,6 +522,122 @@ void main() {
 
       expect(widget.syncCount, greaterThan(countBefore));
       expect(widget.data[HomeWidgetService.unreadKey], '2');
+    });
+  });
+
+  group('foreground push', () {
+    // Emits a foreground RemoteMessage and lets the controller's async handler
+    // (a point read plus an in-place splice) settle before assertions.
+    Future<void> deliver(Map<String, String> data) async {
+      foreground.add(RemoteMessage(data: data));
+      await pumpEventQueue();
+    }
+
+    test('prepends a just-arrived notification to the list', () async {
+      seedRun(3); // n0, n1, n2 — newest-first n2, n1, n0
+      final c = controller(pageSize: 2);
+      await c.loadInitial(); // n2, n1
+      expect(c.notifications.map((n) => n.id).toList(), ['n2', 'n1']);
+
+      // A new notification lands in Firestore, then its push arrives.
+      fs.seed('notifications/n3', {
+        'uid': 'me',
+        'title': 't',
+        'message': 'm',
+        'read': false,
+        'bookmarked': false,
+        'createdAt': Timestamp.fromDate(DateTime(2026, 5, 1, 1)),
+      });
+      await deliver({'notificationId': 'n3'});
+
+      expect(c.notifications.first.id, 'n3');
+      expect(c.notifications.map((n) => n.id).toList(), ['n3', 'n2', 'n1']);
+    });
+
+    test('re-mirrors the widget snapshot with the new item', () async {
+      seedRun(2);
+      final c = controller(pageSize: 2);
+      await c.loadInitial();
+      await flushWidgetSync();
+
+      fs.seed('notifications/n2', {
+        'uid': 'me',
+        'title': 't',
+        'message': 'm',
+        'read': false,
+        'bookmarked': false,
+        'createdAt': Timestamp.fromDate(DateTime(2026, 5, 1, 1)),
+      });
+      await deliver({'notificationId': 'n2'});
+      await flushWidgetSync();
+
+      expect(widget.syncedIds.first, 'n2');
+      expect(widget.data[HomeWidgetService.unreadKey], '3');
+    });
+
+    test('replaces an already-loaded copy rather than duplicating it', () async {
+      seedRun(3);
+      final c = controller(pageSize: 4); // all loaded: n2, n1, n0
+      await c.loadInitial();
+
+      // A push for a notification already in the list (e.g. arriving after a
+      // refresh already pulled it in) must not duplicate the row.
+      await deliver({'notificationId': 'n1'});
+
+      expect(c.notifications.map((n) => n.id).toList(), ['n1', 'n2', 'n0']);
+    });
+
+    test('ignores a push with no notificationId', () async {
+      seedRun(2);
+      final c = controller(pageSize: 2);
+      await c.loadInitial();
+      var notified = 0;
+      c.addListener(() => notified++);
+
+      await deliver({'url': 'https://example.com'});
+
+      expect(c.notifications.map((n) => n.id).toList(), ['n1', 'n0']);
+      expect(notified, 0);
+    });
+
+    test('ignores a push whose document belongs to another user', () async {
+      seedRun(2);
+      fs.seed('notifications/other', {
+        'uid': 'someone-else',
+        'title': 't',
+        'message': 'm',
+        'read': false,
+        'bookmarked': false,
+        'createdAt': Timestamp.fromDate(DateTime(2026, 5, 1, 1)),
+      });
+      final c = controller(pageSize: 2);
+      await c.loadInitial();
+
+      await deliver({'notificationId': 'other'});
+
+      expect(c.notifications.map((n) => n.id).toList(), ['n1', 'n0']);
+    });
+
+    test('stops folding pushes after dispose', () async {
+      seedRun(2);
+      final c = controller(pageSize: 2);
+      await c.loadInitial();
+      c.dispose();
+
+      fs.seed('notifications/n2', {
+        'uid': 'me',
+        'title': 't',
+        'message': 'm',
+        'read': false,
+        'bookmarked': false,
+        'createdAt': Timestamp.fromDate(DateTime(2026, 5, 1, 1)),
+      });
+      // Adding after dispose must not throw (no notifyListeners on a disposed
+      // ChangeNotifier) — the subscription was cancelled.
+      foreground.add(RemoteMessage(data: {'notificationId': 'n2'}));
+      await pumpEventQueue();
+
+      expect(c.notifications.map((n) => n.id).toList(), ['n1', 'n0']);
     });
   });
 

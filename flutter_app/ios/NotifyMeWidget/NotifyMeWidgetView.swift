@@ -3,11 +3,13 @@ import WidgetKit
 
 // The widget's SwiftUI surface. Three families, each tolerant of degenerate data:
 //
-//   - empty  : nothing synced yet / signed out — a prompt to open the app.
-//   - small  : a single-card readout of the latest notification.
-//   - medium : a compact 3-row list, each row a deep-link `Link`.
-//   - large  : a "beeper readout" — the latest five notifications styled like
-//              the app icon's pager LCD, plus a "More" target opening the inbox.
+//   - empty         : nothing synced yet / signed out — a prompt to open the app.
+//   - small         : a single-card readout of the latest notification.
+//   - medium / large: the latest notification rendered on the lit "beeper" LCD —
+//                     the same retro screen styling as the empty state, but
+//                     carrying a real message. The panel itself deep-links to
+//                     the message detail. Large allows more body lines than
+//                     medium.
 //
 // Robustness baked into every family (see `NotifyMeWidgetSnapshot`):
 //   - stale snapshot   : when the app hasn't synced past `staleThreshold`, the
@@ -15,12 +17,13 @@ import WidgetKit
 //   - missing fields   : blank titles fall back to "(no title)", empty bodies are
 //                        dropped, blank categories show "GENERAL" (tolerant decode).
 //   - unknown status   : non-canonical `status` maps to the info color.
-//   - long title/body  : single/few-line caps with tail truncation; the relative
-//                        time always wins layout over a long category label.
+//   - long title/body  : every line is clamped (the title scales down before it
+//                        truncates; body and footer truncate at the tail) so the
+//                        fixed widget canvas can never overflow.
 //
 // Colors come from `RetroWidgetPalette` (mirrors the app's `RetroPalette`); deep
 // links match the routes wired in `notification_tap_router.dart`
-// (`notifyme://notification/{id}` per row, `notifyme://inbox` for header/More).
+// (`notifyme://notification/{id}` for the panel, `notifyme://inbox` for header).
 // Small widgets ignore inner `Link`s — the whole tile is a single tap target —
 // so the small layout deep-links the latest notification via `widgetURL` (and
 // falls back to the inbox when that row carries no usable id).
@@ -62,10 +65,13 @@ struct NotifyMeWidgetView: View {
             EmptyStateView()
         } else if family == .systemSmall {
             SmallLatestView(snapshot: snapshot, now: entry.date, isStale: isStale)
-        } else if family == .systemLarge {
-            BeeperLargeView(snapshot: snapshot, now: entry.date, isStale: isStale)
         } else {
-            MediumListView(snapshot: snapshot, now: entry.date, maxRows: 3, isStale: isStale)
+            BeeperLatestView(
+                snapshot: snapshot,
+                now: entry.date,
+                family: family,
+                isStale: isStale
+            )
         }
     }
 }
@@ -173,19 +179,26 @@ private struct SmallLatestView: View {
     }
 }
 
-// MARK: - Large "beeper" layout
+// MARK: - Medium / large "beeper" layout
 
-/// The flagship layout: a pager-style readout of the latest five notifications.
-private struct BeeperLargeView: View {
+/// The flagship layout for the medium and large families: the single latest
+/// notification drawn on the lit beeper LCD. The LCD panel deep-links to the
+/// message's detail; the header deep-links to the inbox.
+private struct BeeperLatestView: View {
     let snapshot: NotifyMeWidgetSnapshot
     let now: Date
+    let family: WidgetFamily
     let isStale: Bool
 
-    /// The driving spec: latest five messages.
-    private static let rowCount = 5
+    private var isLarge: Bool { family == .systemLarge }
+
+    /// Body lines the LCD affords. Mirrors the empty state's idle-row count per
+    /// family (`LcdPanel.idleRows`): the large screen is tall enough for several,
+    /// the medium screen for one, so neither family's panel can overflow.
+    private var bodyLineLimit: Int { isLarge ? 4 : 1 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: isLarge ? 10 : 6) {
             Link(destination: URL(string: "notifyme://inbox")!) {
                 ReadoutHeader(
                     unreadCount: snapshot.unreadCount,
@@ -195,46 +208,100 @@ private struct BeeperLargeView: View {
                 )
             }
 
-            let items = Array(snapshot.items.prefix(Self.rowCount))
-            VStack(spacing: 0) {
-                // Keyed by position, not id: a malformed snapshot can carry rows
-                // with blank/duplicate ids, which would collide as `ForEach` keys.
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    if index > 0 {
-                        Divider().overlay(RetroWidgetPalette.outline.opacity(0.4))
-                    }
-                    deepLinked(item) {
-                        BeeperRow(item: item, now: now)
-                    }
-                }
+            if let item = snapshot.items.first {
+                latest(item)
             }
 
-            Spacer(minLength: 0)
-
-            MoreButton(hiddenCount: max(0, snapshot.items.count - items.count))
-
             PagerButtonBar()
-                .padding(.top, 10)
+                .padding(.top, isLarge ? 6 : 0)
         }
-        .padding(14)
+        .padding(isLarge ? 14 : 12)
     }
 
-    /// Each row deep-links to its detail screen by id; the app falls back to the
-    /// inbox if the document can't be resolved. Rows with no usable id (malformed
-    /// snapshot) link to the inbox rather than a dead `notification/` URL.
+    /// The latest message panel, wrapped in a deep `Link` to its detail screen.
+    /// A row with no usable id (malformed snapshot) falls back to the inbox
+    /// rather than a dead `notification/` URL.
     @ViewBuilder
-    private func deepLinked<Content: View>(
-        _ item: NotifyMeWidgetItem,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
+    private func latest(_ item: NotifyMeWidgetItem) -> some View {
+        let panel = LcdMessagePanel(item: item, now: now, bodyLineLimit: bodyLineLimit)
         let destination = item.canDeepLink
             ? URL(string: "notifyme://notification/\(item.id)")
             : URL(string: "notifyme://inbox")
         if let destination {
-            Link(destination: destination) { content() }
+            Link(destination: destination) { panel }
         } else {
-            content()
+            panel
         }
+    }
+}
+
+/// The latest notification rendered as a lit beeper readout: it mirrors the idle
+/// `LcdPanel` (monospaced ink on the olive screen, a block cursor trailing the
+/// headline, the bordered panel that fills the screen area) but fills the screen
+/// with a real message instead of the idle dots. Every line is clamped — the
+/// title scales down before truncating, the body and footer truncate at the tail
+/// — so the panel can never outgrow the fixed widget canvas.
+private struct LcdMessagePanel: View {
+    let item: NotifyMeWidgetItem
+    let now: Date
+    let bodyLineLimit: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Headline readout — the title, with the block cursor trailing it
+            // exactly as the idle "NO NEW MESSAGES" line carries one.
+            HStack(spacing: 0) {
+                Text(item.displayTitle)
+                    .font(.system(.footnote, design: .monospaced).weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .truncationMode(.tail)
+                CursorBlock()
+            }
+            .foregroundColor(RetroWidgetPalette.lcdInk)
+
+            // Body preview — dimmer ink, taking the place of the idle dot rows.
+            if item.hasBody {
+                Text(item.body)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(RetroWidgetPalette.lcdInk.opacity(0.7))
+                    .lineLimit(bodyLineLimit)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: 0)
+
+            // Footer readout — status LED + source category + received time,
+            // mirroring the idle "AWAITING SIGNAL" footer line.
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(RetroWidgetPalette.statusColor(item.statusColorName))
+                    .frame(width: 7, height: 7)
+                Text(item.displayCategory)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let received = item.receivedDate {
+                    Text("·")
+                        .layoutPriority(1)
+                    Text(RetroRelativeTime.short(received, now: now))
+                        .fixedSize()
+                        .layoutPriority(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(.caption2, design: .monospaced).weight(.semibold))
+            .foregroundColor(RetroWidgetPalette.lcdInk.opacity(0.85))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(RetroWidgetPalette.lcdScreen)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(RetroWidgetPalette.outline, lineWidth: 1)
+        )
     }
 }
 
@@ -298,167 +365,6 @@ private struct StaleBadge: View {
         .padding(.horizontal, compact ? 5 : 7)
         .padding(.vertical, 2)
         .background(Capsule().fill(RetroWidgetPalette.statusWarning))
-    }
-}
-
-/// One notification, beeper-styled: a status LED, title + body preview, and a
-/// footer line carrying the source category and a relative received time.
-private struct BeeperRow: View {
-    let item: NotifyMeWidgetItem
-    let now: Date
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(RetroWidgetPalette.statusColor(item.statusColorName))
-                .frame(width: 9, height: 9)
-                .padding(.top, 4)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.displayTitle)
-                    .font(.subheadline.weight(item.read ? .regular : .semibold))
-                    .foregroundColor(RetroWidgetPalette.onSurface)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                if item.hasBody {
-                    Text(item.body)
-                        .font(.caption)
-                        .foregroundColor(RetroWidgetPalette.onSurfaceMuted)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-
-                HStack(spacing: 5) {
-                    Text(item.displayCategory)
-                        .font(.caption2.weight(.medium))
-                        .foregroundColor(RetroWidgetPalette.statusColor(item.statusColorName))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if let received = item.receivedDate {
-                        Text("·")
-                            .font(.caption2)
-                            .foregroundColor(RetroWidgetPalette.onSurfaceMuted)
-                            .layoutPriority(1)
-                        Text(RetroRelativeTime.short(received, now: now))
-                            .font(.caption2)
-                            .foregroundColor(RetroWidgetPalette.onSurfaceMuted)
-                            .fixedSize()
-                            .layoutPriority(1)
-                    }
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 7)
-    }
-}
-
-/// The "More" target — opens the inbox to see notifications beyond the five
-/// shown. Always present (the inbox holds the full, scrollable history); when
-/// extra items were trimmed it surfaces the count.
-private struct MoreButton: View {
-    let hiddenCount: Int
-
-    var body: some View {
-        Link(destination: URL(string: "notifyme://inbox")!) {
-            HStack(spacing: 6) {
-                Text(hiddenCount > 0 ? "\(hiddenCount) more in inbox" : "Open inbox")
-                    .font(.caption.weight(.semibold))
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.bold))
-            }
-            .foregroundColor(RetroWidgetPalette.accent)
-            .padding(.top, 8)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-    }
-}
-
-// MARK: - Medium layout
-
-private struct MediumListView: View {
-    let snapshot: NotifyMeWidgetSnapshot
-    let now: Date
-    let maxRows: Int
-    let isStale: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Link(destination: URL(string: "notifyme://inbox")!) {
-                ReadoutHeader(
-                    unreadCount: snapshot.unreadCount,
-                    updatedAt: snapshot.updatedAt,
-                    now: now,
-                    isStale: isStale
-                )
-            }
-
-            // Keyed by position, not id: a malformed snapshot can carry rows with
-            // blank/duplicate ids, which would collide as `ForEach` keys.
-            ForEach(Array(snapshot.items.prefix(maxRows).enumerated()), id: \.offset) { _, item in
-                row(for: item)
-            }
-
-            Spacer(minLength: 0)
-
-            PagerButtonBar()
-        }
-        .padding(12)
-    }
-
-    @ViewBuilder
-    private func row(for item: NotifyMeWidgetItem) -> some View {
-        // No usable id (malformed row) → fall back to the inbox rather than a
-        // dead `notification/` URL.
-        let destination = item.canDeepLink
-            ? URL(string: "notifyme://notification/\(item.id)")
-            : URL(string: "notifyme://inbox")
-        if let destination {
-            Link(destination: destination) { CompactRow(item: item, now: now) }
-        } else {
-            CompactRow(item: item, now: now)
-        }
-    }
-}
-
-private struct CompactRow: View {
-    let item: NotifyMeWidgetItem
-    let now: Date
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Circle()
-                .fill(RetroWidgetPalette.statusColor(item.statusColorName))
-                .frame(width: 8, height: 8)
-                .padding(.top, 4)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(item.displayTitle)
-                        .font(.subheadline.weight(item.read ? .regular : .semibold))
-                        .foregroundColor(RetroWidgetPalette.onSurface)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 4)
-                    if let received = item.receivedDate {
-                        Text(RetroRelativeTime.short(received, now: now))
-                            .font(.caption2)
-                            .foregroundColor(RetroWidgetPalette.onSurfaceMuted)
-                            .fixedSize()
-                            .layoutPriority(1)
-                    }
-                }
-                if item.hasBody {
-                    Text(item.body)
-                        .font(.caption)
-                        .foregroundColor(RetroWidgetPalette.onSurfaceMuted)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-        }
     }
 }
 

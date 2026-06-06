@@ -23,6 +23,12 @@ enum NotifyMeWidgetKeys {
     static let items = "notifyme_widget_items"
     static let unread = "notifyme_widget_unread"
     static let updated = "notifyme_widget_updated"
+
+    /// WidgetKit `kind`. Single source of truth shared by the widget's
+    /// `StaticConfiguration` (`NotifyMeWidget.kind`), the Notification Service
+    /// Extension's `WidgetCenter.reloadTimelines(ofKind:)`, and the Dart
+    /// `HomeWidgetService.defaultIosWidgetName` (`updateWidget(iOSName:)`).
+    static let widgetKind = "NotifyMeWidget"
 }
 
 /// One notification row as stored in the shared snapshot.
@@ -178,8 +184,8 @@ struct NotifyMeWidgetSnapshot {
 #if DEBUG
 extension NotifyMeWidgetSnapshot {
     /// Deterministic data for Xcode previews and the WidgetKit placeholder.
-    /// Six items (one more than the large layout shows) so previews exercise the
-    /// five-row cap, mixed statuses/categories, and the "1 more in inbox" pill.
+    /// Six items with mixed statuses/categories: the medium/large layouts show
+    /// the latest (`preview-1`) while the unread count reflects the full snapshot.
     static let preview = NotifyMeWidgetSnapshot(
         items: [
             NotifyMeWidgetItem(
@@ -255,27 +261,29 @@ extension NotifyMeWidgetSnapshot {
         updatedAt: Date().addingTimeInterval(-10 * 24 * 60 * 60)
     )
 
-    /// Hostile/degenerate rows: a blank title, a missing body, an unknown status
-    /// and category, an extreme title/body, and a row with no id (not
-    /// deep-linkable). Confirms each layout stays intact and readable.
+    /// Hostile/degenerate rows: an extreme title/body, a blank title with a
+    /// missing body and an unknown status/category, and a row with no id (not
+    /// deep-linkable). The overlong row is newest so the latest-message panel
+    /// itself exercises title/body clamping. Confirms each layout stays intact
+    /// and readable.
     static let edgeCases = NotifyMeWidgetSnapshot(
         items: [
             NotifyMeWidgetItem(
                 id: "edge-1",
-                title: "   ",
-                body: "",
-                status: "exploded",
-                category: "",
+                title: String(repeating: "Very long title that should truncate ", count: 6),
+                body: String(repeating: "A long body preview that keeps going and going. ", count: 8),
+                status: "warning",
+                category: "a-very-long-unknown-category-name",
                 receivedAt: 1_700_000_000_000,
                 read: false,
                 url: nil
             ),
             NotifyMeWidgetItem(
                 id: "edge-2",
-                title: String(repeating: "Very long title that should truncate ", count: 6),
-                body: String(repeating: "A long body preview that keeps going and going. ", count: 8),
-                status: "warning",
-                category: "a-very-long-unknown-category-name",
+                title: "   ",
+                body: "",
+                status: "exploded",
+                category: "",
                 receivedAt: 1_699_999_400_000,
                 read: false,
                 url: nil

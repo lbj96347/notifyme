@@ -14,7 +14,7 @@ struct NotifyMeWidgetBundle: WidgetBundle {
 }
 
 struct NotifyMeWidget: Widget {
-    static let kind = "NotifyMeWidget"
+    static let kind = NotifyMeWidgetKeys.widgetKind
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: NotifyMeWidgetProvider()) { entry in

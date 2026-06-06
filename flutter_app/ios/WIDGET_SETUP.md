@@ -2,9 +2,55 @@
 
 This documents the iOS-native plumbing for the `home_widget` package and the
 WidgetKit extension that shares data with the Flutter app. The App Group wiring
-lets both sides read/write the same shared container; the WidgetKit extension
-**source files exist** (`ios/NotifyMeWidget/*.swift`) but are **not yet added to
-an Xcode target** — that registration is the manual step below.
+lets both sides read/write the same shared container. Two extensions are involved:
+the **WidgetKit extension** (`ios/NotifyMeWidget/*.swift`) that draws the
+home-screen widget, and the **Notification Service Extension**
+(`ios/NotificationService/`) that keeps the widget fresh between app launches (see
+*Refresh model*).
+
+Both extension targets are **already wired into the committed
+`Runner.xcodeproj/project.pbxproj`** — their source files, build phases, embed
+steps, entitlements, and the shared membership of `NotifyMeWidgetSnapshot.swift`
+across both targets — so a normal `open ios/Runner.xcworkspace` / `flutter build
+ios` picks them up without manual target creation. The *Manual Xcode steps*
+section below is retained as the reference for **reproducing** that wiring if you
+regenerate the project or the pbxproj entries are lost.
+
+## Refresh model
+
+The widget **never touches Firestore or Firebase directly** — the widget process
+can't reach the network with the user's auth session. It only ever renders the
+JSON snapshot mirrored into the shared App Group container. Three mechanisms keep
+that snapshot current, in order of authority:
+
+1. **App-open sync — the source of truth.** While the app runs, after each inbox
+   load/refresh it calls `HomeWidgetService.sync` (`lib/features/widget/
+   home_widget_service.dart`) with the newest notifications, which **overwrites
+   the whole snapshot** from Firestore and asks the OS to redraw. This is the
+   authoritative refresh; everything below is reconciled by it the next time the
+   app is foregrounded.
+2. **Incoming notifications — optimistic mirror via the Notification Service
+   Extension.** Each push is sent with `mutable-content: 1` (set by the backend
+   in `firebase_functions/src/messaging.ts`), so iOS hands every delivery to the
+   `NotificationService` extension on its own background process **even when the
+   app is backgrounded or terminated**, before the banner is shown. The extension
+   parses the push and **prepends** it to the App Group snapshot using the *same*
+   schema the widget consumes (`NotifyMeWidgetItem` / `NotifyMeWidgetKeys`, shared
+   from `NotifyMeWidgetSnapshot.swift`), recomputes the unread count and write
+   timestamp, and reloads the timeline. It is purely additive: items are de-duped
+   by id, the set is bounded to `maxItems` (10, mirroring
+   `HomeWidgetService.defaultMaxItems`), and the whole thing is best-effort —
+   any missing/corrupt piece simply skips the mirror without altering the banner.
+   When the app next runs, app-open sync overwrites this optimistic state from the
+   authoritative source.
+3. **Hourly timeline backstop.** `NotifyMeWidgetProvider` reloads on its own
+   roughly hourly so relative times advance and the staleness badge can trip even
+   if neither of the above fires; it re-reads the same snapshot and never fetches
+   data itself.
+
+Net effect: the widget reflects new notifications within seconds of delivery
+(without opening the app) while the app remains the single source of truth that
+reconciles the snapshot on next launch.
 
 ## WidgetKit extension source (skeleton, already in the repo)
 
@@ -25,27 +71,52 @@ an Xcode target** — that registration is the manual step below.
   and `RetroRelativeTime` for compact `now`/`5m`/`2h`/`3d` timestamps.
 - `NotifyMeWidgetView.swift` — SwiftUI surface across all three system families:
   an empty/placeholder state, a **small** single-card readout of the latest
-  notification, a compact **medium** list (latest three), and a **large "beeper
-  readout"** — the latest five notifications styled like the app icon's pager LCD
-  (status LED, title, body preview, `CATEGORY · time` footer), with a "More"
-  target opening the inbox. Medium/large rows are deep-link `Link`s; the small
-  tile deep-links the latest notification via `widgetURL` (inner `Link`s are
-  ignored on small widgets). Every family is hardened against degenerate data:
-  a **stale** badge replaces the unread pill when the snapshot is past
-  `staleThreshold`; blank titles/bodies/categories use their display fallbacks;
-  unknown statuses fall back to the info color; long titles/bodies cap with tail
-  truncation while the relative time keeps layout priority; and rows with no
-  usable id deep-link to the inbox (with `ForEach` keyed by position so blank
-  ids can't collide). The `#if DEBUG` previews include dedicated `.stale` and
-  `.edgeCases` fixtures.
+  notification, and **medium/large** layouts that render that same latest
+  notification on the lit "beeper" LCD — the retro screen styling shared with the
+  empty state (monospaced ink on the olive panel, a block cursor trailing the
+  title, status LED + `CATEGORY · time` footer), with large affording more body
+  lines than medium. The LCD panel deep-links to the message detail and the
+  header deep-links to the inbox. The small tile deep-links the latest
+  notification via `widgetURL` (inner `Link`s are ignored on small widgets).
+  Every family is hardened against degenerate data: a **stale** badge replaces
+  the unread pill when the snapshot is past `staleThreshold`; blank
+  titles/bodies/categories use their display fallbacks; unknown statuses fall
+  back to the info color; every line is clamped (the title scales down before it
+  truncates, body/footer truncate at the tail) so the fixed canvas can't
+  overflow; and a row with no usable id deep-links to the inbox. The `#if DEBUG`
+  previews include dedicated `.stale` and `.edgeCases` fixtures.
 - `NotifyMeWidgetBundle.swift` — `@main` `WidgetBundle`; `kind == "NotifyMeWidget"`
   matches `HomeWidgetService.defaultIosWidgetName`.
 - `Info.plist` — `com.apple.widgetkit-extension` extension point.
 - `NotifyMeWidget.entitlements` — App Group (see below).
 
-SourceKit will flag "cannot find type in scope" / `@main` warnings on these
-files until they're compiled together inside the extension target created in
-Xcode — that's expected for loose files with no target membership.
+These files are members of the `NotifyMeWidget` target in the committed pbxproj.
+A standalone editor (or a SourceKit index that hasn't picked up the target
+membership yet) may still flag "cannot find type in scope" / `@main` until the
+target is compiled together — that's editor noise, not a build problem.
+
+## Notification Service Extension source (skeleton, already in the repo)
+
+`ios/NotificationService/` holds the extension that mirrors incoming pushes into
+the widget snapshot between app launches (see *Refresh model*):
+
+- `NotificationService.swift` — the `UNNotificationServiceExtension` subclass.
+  `didReceive(...)` calls `WidgetSnapshotWriter.record(...)` (best-effort, never
+  blocks or alters the banner) then delivers the unchanged content. The
+  `WidgetSnapshotWriter` parses the FCM `data` block (falling back to `aps.alert`
+  for title/body), prepends a `NotifyMeWidgetItem` to the App Group snapshot,
+  de-dupes by id, trims to `maxItems` (10), recomputes unread/timestamp, and calls
+  `WidgetCenter.reloadTimelines`. It does **not** import Firebase or hit the
+  network.
+- `Info.plist` — `com.apple.usernotificationcenter.service` extension point.
+- `NotificationService.entitlements` — the **same** App Group as the widget.
+
+This target shares `NotifyMeWidgetSnapshot.swift` with the widget target (it owns
+the `NotifyMeWidgetItem` / `NotifyMeWidgetKeys` types), so the snapshot it writes
+is byte-compatible with what the widget reads. That shared membership — plus the
+`NotificationService` target, its embed step, and entitlements — is already
+wired in the committed pbxproj (the manual step below documents how to recreate
+it).
 
 ## App Group identifier
 
@@ -63,14 +134,24 @@ change the App Group everywhere it appears (entitlements files below, the Flutte
 - `ios/Runner/Runner.entitlements` — added the `com.apple.security.application-groups`
   array containing `group.com.asktobuild.notifyme`. This is already referenced by
   the Runner target (`CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`).
-- `ios/NotifyMeWidget/NotifyMeWidget.entitlements` — a ready-to-use entitlements
-  file with the **same** App Group, to be assigned to the future widget extension
-  target (see manual steps).
+- `ios/NotifyMeWidget/NotifyMeWidget.entitlements` and
+  `ios/NotificationService/NotificationService.entitlements` — ready-to-use
+  entitlements files with the **same** App Group, assigned to the widget and
+  Notification Service Extension targets respectively.
+- `ios/Runner.xcodeproj/project.pbxproj` — both extension targets
+  (`NotifyMeWidget`, `NotificationService`) are wired in: file references, Sources
+  build phases, the Runner's *Embed App Extensions* step, target dependencies,
+  per-config build settings (`INFOPLIST_FILE`, `CODE_SIGN_ENTITLEMENTS`,
+  `PRODUCT_BUNDLE_IDENTIFIER`, `IPHONEOS_DEPLOYMENT_TARGET = 14.0`), and the shared
+  membership of `NotifyMeWidgetSnapshot.swift` across both targets.
 
-## Manual Xcode steps (cannot be scripted reliably)
+## Manual Xcode steps (already applied — reference for regenerating)
 
-Adding a WidgetKit extension target mutates `Runner.xcodeproj/project.pbxproj` in
-ways that are unsafe to hand-edit. Do these in Xcode (`open ios/Runner.xcworkspace`):
+The wiring below is **already present** in the committed pbxproj; you do not need
+to perform it for a normal build. It is documented because adding an extension
+target via Xcode mutates `Runner.xcodeproj/project.pbxproj` in ways that are unsafe
+to hand-edit — so if you regenerate the project or lose the wiring, reproduce it in
+Xcode (`open ios/Runner.xcworkspace`):
 
 1. **Register the App Group in your Apple Developer account / Signing & Capabilities.**
    - Select the **Runner** target → *Signing & Capabilities* → **+ Capability** →
@@ -99,6 +180,25 @@ ways that are unsafe to hand-edit. Do these in Xcode (`open ios/Runner.xcworkspa
      `group.com.asktobuild.notifyme`. Point its `CODE_SIGN_ENTITLEMENTS` build
      setting at `NotifyMeWidget/NotifyMeWidget.entitlements` (already created here),
      or merge the App Group into the file Xcode generates.
+
+3. **Add the Notification Service Extension target** (keeps the widget fresh on
+   incoming pushes — see *Refresh model*):
+   - *File → New → Target… → Notification Service Extension*. Name it
+     `NotificationService`.
+   - **Replace the generated stub with the committed source.** Delete the
+     generated `NotificationService.swift`/`Info.plist` (move to trash) and
+     *Add Files to "Runner"…* the skeleton in `ios/NotificationService/`:
+     `NotificationService.swift` and `Info.plist` — with **target membership =
+     NotificationService**. Point the target's `INFOPLIST_FILE` at
+     `NotificationService/Info.plist`.
+   - **Also add `ios/NotifyMeWidget/NotifyMeWidgetSnapshot.swift` to this
+     target's membership** (check both `NotifyMeWidget` *and* `NotificationService`
+     in the File Inspector). The extension reuses its `NotifyMeWidgetItem` /
+     `NotifyMeWidgetKeys` types, so the snapshot it writes stays byte-compatible
+     with what the widget reads.
+   - In the new target's *Signing & Capabilities*, add **App Groups** and check
+     `group.com.asktobuild.notifyme`. Point its `CODE_SIGN_ENTITLEMENTS` at
+     `NotificationService/NotificationService.entitlements` (already created here).
 
 ## Flutter-side usage (when implementing)
 
@@ -188,8 +288,9 @@ Swift WidgetKit code — that needs the manual pass below.
 
 ### Manual — iOS Simulator / device WidgetKit behavior
 
-The Swift surface (decoding, the three families, staleness, deep links) only runs
-once the extension target exists (see *Manual Xcode steps*). After wiring it:
+The Swift surface (decoding, the three families, staleness, deep links) needs a
+real WidgetKit build; the extension targets are already wired (see *Manual Xcode
+steps*), so just open the workspace and run:
 
 1. **SwiftUI previews (fastest loop, no full build).** Open
    `NotifyMeWidgetView.swift` in Xcode and use the canvas. The `#if DEBUG`
@@ -206,13 +307,19 @@ once the extension target exists (see *Manual Xcode steps*). After wiring it:
      of webhook notifications so the inbox (and therefore `HomeWidgetService.sync`)
      has data.
    - Long-press the home screen → **+** → add the **NotifyMe** widget in each
-     size. Confirm it shows the latest notifications, the unread count, and a
-     fresh relative time. Add the same widget in all three sizes to compare.
-   - **Deep links:** tap a row (medium/large) → the app opens that notification's
-     detail; tap the small tile → opens the latest; tap **More** / the header →
-     lands on the inbox tab. Verify this from all three app states: foreground,
-     backgrounded, and **terminated** (swipe-kill the app first, then tap — this
+     size. Confirm every size shows the latest notification, the unread count,
+     and a fresh relative time. Add the same widget in all three sizes to compare.
+   - **Deep links:** tap the LCD panel (medium/large) or the small tile → the app
+     opens that notification's detail; tap the header → lands on the inbox tab.
+     Verify this from all three app states:
+     foreground, backgrounded, and **terminated** (swipe-kill the app first, then tap — this
      exercises `initiallyLaunchedFromHomeWidget()`).
+   - **Push-driven refresh (Notification Service Extension):** with the app
+     **backgrounded or swipe-killed**, fire a webhook notification and confirm the
+     widget shows the new item within a few seconds — without opening the app. This
+     exercises `NotificationService` mirroring the push into the snapshot. Then
+     foreground the app and confirm the snapshot reconciles (app-open sync
+     overwrites it from Firestore; no duplicate row for the just-pushed item).
    - **Sign-out:** sign out in the app and confirm the widget redraws to its empty
      state (driven by `HomeWidgetService.clear`).
 

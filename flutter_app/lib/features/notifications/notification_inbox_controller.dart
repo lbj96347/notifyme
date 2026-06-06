@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import '../widget/home_widget_service.dart';
@@ -43,14 +44,27 @@ class NotificationInboxController extends ChangeNotifier {
     required String uid,
     int pageSize = NotificationRepository.defaultPageSize,
     HomeWidgetService? homeWidgetService,
+    Stream<RemoteMessage>? foregroundMessages,
   }) : _repository = repository,
        _uid = uid,
        _pageSize = pageSize,
-       _homeWidget = homeWidgetService ?? HomeWidgetService();
+       _homeWidget = homeWidgetService ?? HomeWidgetService() {
+    // While the app is foregrounded the OS shows no tray notification and this
+    // pull-based list gets no live snapshot, so a just-arrived push would be
+    // invisible (in the app *and* the mirrored widget) until the next manual
+    // refresh. Listen for foreground pushes and fold each into the list.
+    _foregroundSub =
+        (foregroundMessages ?? FirebaseMessaging.onMessage)
+            .listen(_onForegroundMessage);
+  }
 
   final NotificationRepository _repository;
   final String _uid;
   final int _pageSize;
+
+  /// Foreground FCM pushes, folded into the list by [_onForegroundMessage].
+  /// Cancelled in [dispose].
+  StreamSubscription<RemoteMessage>? _foregroundSub;
 
   /// Mirrors the loaded notifications into the home-screen widget's shared
   /// container so its snapshot tracks the in-app list. Every list mutation here
@@ -264,6 +278,36 @@ class NotificationInboxController extends ChangeNotifier {
     }
   }
 
+  /// Folds a foreground FCM push into the loaded list so a just-arrived
+  /// notification shows up in the inbox — and the mirrored home-screen widget —
+  /// without waiting for a manual refresh.
+  ///
+  /// The backend writes the notification document *before* sending the push
+  /// (see `firebase_functions/src/webhook.ts`), so by the time this fires the
+  /// document exists: resolve it by the `notificationId` the push carries and
+  /// splice it to the front of the newest-first list (replacing any existing
+  /// copy so a refresh/arrival race can't duplicate it). The existing
+  /// [_syncWidget] then refreshes the widget snapshot.
+  ///
+  /// Best-effort and quietly skipped when the push carries no resolvable id
+  /// (missing, deleted, or another user's). Deliberately unguarded by [_isBusy]
+  /// — like [reloadNotification] it's a single point read plus an in-place
+  /// splice, with nothing to serialize against the paginated loads.
+  Future<void> _onForegroundMessage(RemoteMessage message) async {
+    final id = message.data['notificationId'];
+    if (id is! String || id.isEmpty) return;
+
+    final notification = await _repository.fetchById(_uid, id);
+    if (notification == null) return;
+
+    _notifications = <AppNotification>[
+      notification,
+      ..._notifications.where((n) => n.id != id),
+    ];
+    _syncWidget();
+    notifyListeners();
+  }
+
   /// Pushes the current newest-first list into the home-screen widget's shared
   /// container and triggers a native redraw.
   ///
@@ -275,5 +319,12 @@ class NotificationInboxController extends ChangeNotifier {
   /// appended pages are older than that snapshot.
   void _syncWidget() {
     unawaited(_homeWidget.sync(_notifications));
+  }
+
+  @override
+  void dispose() {
+    unawaited(_foregroundSub?.cancel());
+    _foregroundSub = null;
+    super.dispose();
   }
 }
