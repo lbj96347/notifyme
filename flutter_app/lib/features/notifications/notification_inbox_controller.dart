@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../widget/home_widget_service.dart';
 import 'notification_model.dart';
 import 'notification_repository.dart';
 
@@ -39,13 +42,21 @@ class NotificationInboxController extends ChangeNotifier {
     required NotificationRepository repository,
     required String uid,
     int pageSize = NotificationRepository.defaultPageSize,
+    HomeWidgetService? homeWidgetService,
   }) : _repository = repository,
        _uid = uid,
-       _pageSize = pageSize;
+       _pageSize = pageSize,
+       _homeWidget = homeWidgetService ?? HomeWidgetService();
 
   final NotificationRepository _repository;
   final String _uid;
   final int _pageSize;
+
+  /// Mirrors the loaded notifications into the home-screen widget's shared
+  /// container so its snapshot tracks the in-app list. Every list mutation here
+  /// is the only signal the widget gets — the widget process can't reach
+  /// Firestore — so the controller refreshes it after each change.
+  final HomeWidgetService _homeWidget;
 
   List<AppNotification> _notifications = const <AppNotification>[];
 
@@ -126,6 +137,7 @@ class NotificationInboxController extends ChangeNotifier {
       _notifications = page.notifications;
       _cursor = page.cursor;
       _hasMore = page.hasMore;
+      _syncWidget();
     } catch (e) {
       _error = e;
     } finally {
@@ -152,6 +164,7 @@ class NotificationInboxController extends ChangeNotifier {
       _notifications = page.notifications;
       _cursor = page.cursor;
       _hasMore = page.hasMore;
+      _syncWidget();
     } catch (e) {
       _error = e;
     } finally {
@@ -189,6 +202,8 @@ class NotificationInboxController extends ChangeNotifier {
       // page leaves the previous cursor in place but pins hasMore false below.
       _cursor = page.cursor ?? _cursor;
       _hasMore = page.hasMore;
+      // No widget sync here: loadMore only appends pages *older* than the
+      // widget's newest-N snapshot, so the mirrored set never changes.
     } catch (e) {
       _error = e;
       _loadMoreError = e;
@@ -223,7 +238,10 @@ class NotificationInboxController extends ChangeNotifier {
       }
       return n;
     }).toList();
-    if (changed) notifyListeners();
+    if (changed) {
+      _syncWidget();
+      notifyListeners();
+    }
   }
 
   /// Flips every loaded notification to read, in place.
@@ -240,6 +258,22 @@ class NotificationInboxController extends ChangeNotifier {
       changed = true;
       return n.copyWith(read: true);
     }).toList();
-    if (changed) notifyListeners();
+    if (changed) {
+      _syncWidget();
+      notifyListeners();
+    }
+  }
+
+  /// Pushes the current newest-first list into the home-screen widget's shared
+  /// container and triggers a native redraw.
+  ///
+  /// Fire-and-forget: [HomeWidgetService.sync] is best-effort and swallows its
+  /// own errors, so there is nothing to await or surface. Called after every
+  /// mutation that changes the widget's newest-N snapshot — the initial load, a
+  /// refresh, and the read/bookmark flips ([reloadNotification],
+  /// [markAllReadLocally]). Deliberately *not* called from [loadMore], whose
+  /// appended pages are older than that snapshot.
+  void _syncWidget() {
+    unawaited(_homeWidget.sync(_notifications));
   }
 }

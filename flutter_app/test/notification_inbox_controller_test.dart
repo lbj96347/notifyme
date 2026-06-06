@@ -7,14 +7,44 @@
 // fetch open and race two loads) and a one-shot failure (to drive the error
 // path) without faking DocumentSnapshots.
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:notifyme/features/notifications/notification_date_group.dart';
 import 'package:notifyme/features/notifications/notification_inbox_controller.dart';
 import 'package:notifyme/features/notifications/notification_repository.dart';
+import 'package:notifyme/features/widget/home_widget_service.dart';
 
 import 'support/fake_firestore.dart';
+
+/// Records every [HomeWidgetService.sync]/`clear` call so a test can assert the
+/// controller mirrors its list into the home-screen widget. Holds the most
+/// recent synced item ids (newest-first) and a running call count.
+class _RecordingHomeWidgetClient implements HomeWidgetClient {
+  final Map<String, String?> data = <String, String?>{};
+  int syncCount = 0;
+
+  @override
+  Future<void> setAppGroupId(String groupId) async {}
+
+  @override
+  Future<void> saveWidgetData(String key, String? value) async {
+    data[key] = value;
+    if (key == HomeWidgetService.itemsKey) syncCount++;
+  }
+
+  @override
+  Future<void> updateWidget({String? iOSName, String? androidName}) async {}
+
+  List<String> get syncedIds {
+    final raw = data[HomeWidgetService.itemsKey];
+    if (raw == null) return const <String>[];
+    return (jsonDecode(raw) as List<dynamic>)
+        .map((e) => (e as Map<String, dynamic>)['id'] as String)
+        .toList();
+  }
+}
 
 /// Wraps the real repository so a test can (a) pause a `fetchPage` on [gate]
 /// until it completes the completer, and (b) make the next `fetchPage` throw
@@ -51,11 +81,16 @@ class _ScriptedRepository extends NotificationRepository {
 void main() {
   late FakeFirestore fs;
   late _ScriptedRepository repo;
+  late _RecordingHomeWidgetClient widget;
 
   setUp(() {
     fs = FakeFirestore();
     repo = _ScriptedRepository(fs);
+    widget = _RecordingHomeWidgetClient();
   });
+
+  // Lets the fire-and-forget _syncWidget() future settle before assertions.
+  Future<void> flushWidgetSync() => Future<void>.delayed(Duration.zero);
 
   // Seeds n0..n[count-1] with ascending createdAt, so the newest-first order
   // is n[count-1], …, n1, n0.
@@ -73,7 +108,12 @@ void main() {
   }
 
   NotificationInboxController controller({int pageSize = 2, String uid = 'me'}) =>
-      NotificationInboxController(repository: repo, uid: uid, pageSize: pageSize);
+      NotificationInboxController(
+        repository: repo,
+        uid: uid,
+        pageSize: pageSize,
+        homeWidgetService: HomeWidgetService(client: widget),
+      );
 
   group('loadInitial', () {
     test('loads the first page newest-first and tracks cursor/hasMore', () async {
@@ -408,6 +448,74 @@ void main() {
       expect(c.notifications.every((n) => n.read), isTrue);
       expect(c.hasMore, isTrue);
       expect(repo.fetchPageCalls, pagesLoaded); // no refetch
+    });
+  });
+
+  group('home-screen widget sync', () {
+    test('loadInitial mirrors the newest-first list into the widget', () async {
+      seedRun(5);
+      final c = controller(pageSize: 2);
+
+      await c.loadInitial();
+      await flushWidgetSync();
+
+      expect(widget.syncedIds, ['n4', 'n3']);
+      expect(widget.data[HomeWidgetService.unreadKey], '2');
+    });
+
+    test('refresh re-mirrors page one into the widget', () async {
+      seedRun(5);
+      final c = controller(pageSize: 2);
+      await c.loadInitial();
+      await flushWidgetSync();
+
+      await c.refresh();
+      await flushWidgetSync();
+
+      expect(widget.syncedIds, ['n4', 'n3']);
+    });
+
+    test('loadMore does not re-sync the widget (older pages only)', () async {
+      seedRun(5);
+      final c = controller(pageSize: 2);
+      await c.loadInitial();
+      await flushWidgetSync();
+      final countAfterInitial = widget.syncCount;
+
+      await c.loadMore();
+      await flushWidgetSync();
+
+      // The appended page is older than the widget's newest-N snapshot.
+      expect(widget.syncCount, countAfterInitial);
+      expect(widget.syncedIds, ['n4', 'n3']);
+    });
+
+    test('markAllReadLocally re-mirrors with the flipped read state', () async {
+      seedRun(3);
+      final c = controller(pageSize: 4); // one page, all loaded
+      await c.loadInitial();
+      await flushWidgetSync();
+      expect(widget.data[HomeWidgetService.unreadKey], '3');
+
+      c.markAllReadLocally();
+      await flushWidgetSync();
+
+      expect(widget.data[HomeWidgetService.unreadKey], '0');
+    });
+
+    test('reloadNotification re-mirrors a reconciled row', () async {
+      seedRun(3);
+      final c = controller(pageSize: 4);
+      await c.loadInitial();
+      await flushWidgetSync();
+      final countBefore = widget.syncCount;
+
+      await repo.markRead('me', 'n2');
+      await c.reloadNotification('n2');
+      await flushWidgetSync();
+
+      expect(widget.syncCount, greaterThan(countBefore));
+      expect(widget.data[HomeWidgetService.unreadKey], '2');
     });
   });
 

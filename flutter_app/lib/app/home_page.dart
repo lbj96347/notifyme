@@ -7,6 +7,7 @@ import '../features/devices/device_service.dart';
 import '../features/notifications/notification_inbox_screen.dart';
 import '../features/notifications/notification_tap_router.dart';
 import '../features/settings/settings_screen.dart';
+import 'home_tab.dart';
 
 /// The app's main screen once the user is signed in.
 ///
@@ -29,8 +30,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _index = 0;
-
   /// Routes notification taps to the detail screen (or a URL). Created here —
   /// once the user is signed in — so reads are scoped to `user.uid` and the
   /// navigator is mounted by the time a cold-start tap is handled.
@@ -44,6 +43,11 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    // A fresh sign-in always lands on the inbox; reset before listening so a
+    // tab left selected by a prior session doesn't carry over.
+    homeTabIndex.value = homeInboxTabIndex;
+    homeTabIndex.addListener(_onTabChanged);
+
     _tapRouter = NotificationTapRouter(uid: widget.user.uid);
     _tapRouter.register();
 
@@ -57,9 +61,16 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    homeTabIndex.removeListener(_onTabChanged);
     _tapRouter.dispose();
     _deviceService.dispose();
     super.dispose();
+  }
+
+  /// Rebuilds when the selected tab changes — including changes pushed from a
+  /// `notifyme://inbox` deep link outside the widget tree.
+  void _onTabChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -71,11 +82,12 @@ class _HomePageState extends State<HomePage> {
       SettingsScreen(uid: widget.user.uid, authService: widget.authService),
     ];
 
+    final index = homeTabIndex.value;
     return Scaffold(
-      body: IndexedStack(index: _index, children: tabs),
+      body: IndexedStack(index: index, children: tabs),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        selectedIndex: index,
+        onDestinationSelected: (i) => homeTabIndex.value = i,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.notifications_outlined),

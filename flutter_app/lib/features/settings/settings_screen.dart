@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../auth/auth_service.dart';
+import '../widget/home_widget_service.dart';
 import 'webhook_url.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -99,6 +100,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       await widget.authService.signOut();
+      // Wipe the home-screen widget's mirrored notifications so a signed-out
+      // device doesn't leave the previous user's data on the lock/home screen.
+      // Best-effort: clear() swallows its own errors.
+      await HomeWidgetService().clear();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
