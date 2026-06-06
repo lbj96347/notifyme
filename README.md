@@ -23,6 +23,23 @@ You deploy the entire open-source stack into **your own Firebase project**.
 There is no central server, no hardcoded project IDs, and no third party in the
 path — your notifications stay yours.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="screenshots/IMG_4288.webp" alt="Lock-screen notification stack" width="200" /><br /><sub>Lock-screen stack</sub></td>
+    <td align="center" width="25%"><img src="screenshots/IMG_4312.webp" alt="Home-screen banner notification" width="200" /><br /><sub>Banner notification</sub></td>
+    <td align="center" width="25%"><img src="screenshots/IMG_4289.webp" alt="In-app notification inbox" width="200" /><br /><sub>Notification inbox</sub></td>
+    <td align="center" width="25%"><img src="screenshots/IMG_4290.webp" alt="Bookmarks screen" width="200" /><br /><sub>Bookmarks</sub></td>
+  </tr>
+  <tr>
+    <td align="center" width="25%"><img src="screenshots/IMG_4308.webp" alt="Home-screen widget" width="200" /><br /><sub>Home-screen widget</sub></td>
+    <td align="center" width="25%"><img src="screenshots/IMG_4309.webp" alt="Add widget — small" width="200" /><br /><sub>Widget — small</sub></td>
+    <td align="center" width="25%"><img src="screenshots/IMG_4310.webp" alt="Add widget — medium" width="200" /><br /><sub>Widget — medium</sub></td>
+    <td align="center" width="25%"><img src="screenshots/IMG_4311.webp" alt="Add widget — large" width="200" /><br /><sub>Widget — large</sub></td>
+  </tr>
+</table>
+
 ## Built with
 
 NotifyMe's development was assisted by these tools:
