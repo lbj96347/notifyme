@@ -86,6 +86,12 @@ export function buildDataPayload(
 /**
  * Assemble a multicast message: a display `notification` plus the `data` payload
  * the app reads on tap.
+ *
+ * `apns.payload.aps["mutable-content"] = 1` opts each iOS delivery into the app's
+ * Notification Service Extension (`ios/NotificationService`), which runs even when
+ * the app is backgrounded/terminated and mirrors the push into the shared
+ * home-screen widget snapshot before the banner is shown. The flag is harmless on
+ * Android (which ignores the `apns` block).
  */
 export function buildMulticastMessage(
   tokens: string[],
@@ -99,6 +105,13 @@ export function buildMulticastMessage(
       body: payload.message,
     },
     data: buildDataPayload(notificationId, payload),
+    apns: {
+      payload: {
+        aps: {
+          "mutable-content": 1,
+        },
+      },
+    },
   };
 }
 

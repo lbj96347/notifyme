@@ -73,6 +73,13 @@ test("buildMulticastMessage sets notification title/body and data payload", () =
   assert.equal(message.data?.url, "https://github.com/acme/app/pull/1");
 });
 
+test("buildMulticastMessage opts iOS deliveries into the service extension", () => {
+  // `mutable-content: 1` is what hands each delivery to the iOS Notification
+  // Service Extension, which mirrors the push into the shared widget snapshot.
+  const message = buildMulticastMessage(["tokA"], "note-6", FULL);
+  assert.equal(message.apns?.payload?.aps?.["mutable-content"], 1);
+});
+
 test("unregisteredTokenIndexes flags only genuinely dead tokens", () => {
   const responses: SendResponse[] = [
     { success: true, messageId: "m0" },
