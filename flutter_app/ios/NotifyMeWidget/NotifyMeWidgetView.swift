@@ -43,12 +43,13 @@ struct NotifyMeWidgetView: View {
     /// on the next app sync) and it falls back to the idle empty state.
     private var snapshot: NotifyMeWidgetSnapshot { entry.snapshot.unreadOnly }
 
-    /// Whole-widget tap target. The small family draws no inner `Link`s, so it
-    /// resolves to the latest notification's detail (or the inbox when that row
-    /// has no usable id); medium/large fall back to the inbox here and override
-    /// per-row with their own `Link`s.
+    /// Whole-widget tap target. The single-tap families (small + every accessory
+    /// family) draw no inner `Link`s, so they resolve to the latest
+    /// notification's detail (or the inbox when that row has no usable id);
+    /// medium/large fall back to the inbox here and override per-row with their
+    /// own `Link`s.
     private var widgetURL: URL? {
-        if family == .systemSmall,
+        if isSingleTapTarget,
            let latest = snapshot.items.first,
            latest.canDeepLink {
             return URL(string: "notifyme://notification/\(latest.id)")
@@ -56,12 +57,56 @@ struct NotifyMeWidgetView: View {
         return URL(string: "notifyme://inbox")
     }
 
+    /// Whether this family is a single whole-widget tap target rather than a
+    /// surface that hosts its own inner `Link`s. The small Home Screen tile and
+    /// all three lock-screen accessory families behave this way; the accessory
+    /// families are only reachable on iOS 16+, so they're checked behind an
+    /// availability guard.
+    private var isSingleTapTarget: Bool {
+        if family == .systemSmall { return true }
+        if #available(iOSApplicationExtension 16.0, iOS 16.0, *) {
+            switch family {
+            case .accessoryInline, .accessoryCircular, .accessoryRectangular:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
+    }
+
     /// Whether the cached snapshot is old enough to flag as out of date.
     private var isStale: Bool { snapshot.isStale(asOf: entry.date) }
 
+    /// Whether `family` is one of the lock-screen / StandBy accessory families.
+    /// These cases only exist on iOS 16+, so they're matched behind an
+    /// availability guard (returning `false` on iOS 14–15, which only ever hand
+    /// us the `.system*` families anyway).
+    private var isAccessoryFamily: Bool {
+        if #available(iOSApplicationExtension 16.0, iOS 16.0, *) {
+            switch family {
+            case .accessoryInline, .accessoryCircular, .accessoryRectangular:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
+    }
+
     @ViewBuilder
     private var content: some View {
-        if snapshot.isEmpty {
+        if #available(iOSApplicationExtension 16.0, iOS 16.0, *), isAccessoryFamily {
+            // Lock-screen / StandBy accessory families render with the system's
+            // monochrome tint, so they get their own compact, color-agnostic
+            // layouts instead of the retro Home Screen styling.
+            AccessoryWidgetView(
+                snapshot: snapshot,
+                now: entry.date,
+                family: family,
+                isStale: isStale
+            )
+        } else if snapshot.isEmpty {
             EmptyStateView()
         } else if family == .systemSmall {
             SmallLatestView(snapshot: snapshot, now: entry.date, isStale: isStale)
@@ -368,6 +413,258 @@ private struct StaleBadge: View {
     }
 }
 
+// MARK: - Lock-screen / StandBy accessory layouts (iOS 16+)
+
+/// Dispatches to the per-family accessory layout. Lock-screen widgets render
+/// through a monochrome/vibrant tint, so colors mostly collapse to the user's
+/// chosen lock-screen color — these views therefore lean on SF Symbols,
+/// monospaced type, and shape framing rather than the retro palette, and convey
+/// status via distinct glyphs (not color, which wouldn't survive the tint). The
+/// whole widget is a single tap target (see `widgetURL`), so none draw inner
+/// `Link`s.
+///
+/// Rectangular is the flagship: it rebuilds the Home Screen "beeper LCD" in
+/// monochrome — a bordered panel over `AccessoryWidgetBackground`, a monospaced
+/// header readout, the latest headline trailed by a block cursor, and a footer
+/// readout (status glyph · category · time). Circular and inline are deliberately
+/// terse unread summaries.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private struct AccessoryWidgetView: View {
+    let snapshot: NotifyMeWidgetSnapshot
+    let now: Date
+    let family: WidgetFamily
+    let isStale: Bool
+
+    var body: some View {
+        switch family {
+        case .accessoryInline:
+            InlineAccessoryView(snapshot: snapshot)
+        case .accessoryCircular:
+            CircularAccessoryView(snapshot: snapshot)
+        case .accessoryRectangular:
+            RectangularAccessoryView(snapshot: snapshot, now: now, isStale: isStale)
+        default:
+            // Routed here only for the three accessory families; the inline form
+            // is the safest single-line fallback for any other case.
+            InlineAccessoryView(snapshot: snapshot)
+        }
+    }
+}
+
+/// `.accessoryInline` — a single line beside the clock: a compact unread summary.
+/// Leads with the count ("3 new · CI passed") so it reads as a tally at a glance,
+/// degrading to a plain "No new messages" when caught up.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private struct InlineAccessoryView: View {
+    let snapshot: NotifyMeWidgetSnapshot
+
+    var body: some View {
+        if snapshot.unreadCount > 0, let latest = snapshot.items.first {
+            Label {
+                Text("\(AccessoryUnread.label(snapshot.unreadCount)) new · \(latest.displayTitle)")
+            } icon: {
+                Image(systemName: "bell.badge.fill")
+            }
+        } else {
+            Label("No new messages", systemImage: "bell")
+        }
+    }
+}
+
+/// `.accessoryCircular` — a compact unread tally: the count under a bell, or a
+/// struck-through bell when caught up. `AccessoryWidgetBackground` draws the faint
+/// system well and `widgetAccentable()` lets the readout adopt the lock-screen
+/// tint. Large counts cap at "99+" so the dial never overflows.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private struct CircularAccessoryView: View {
+    let snapshot: NotifyMeWidgetSnapshot
+
+    var body: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            if snapshot.unreadCount > 0 {
+                VStack(spacing: -1) {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(AccessoryUnread.label(snapshot.unreadCount))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                }
+                .widgetAccentable()
+            } else {
+                Image(systemName: "bell.slash")
+                    .font(.system(size: 18, weight: .semibold))
+            }
+        }
+    }
+}
+
+/// `.accessoryRectangular` — the flagship accessory layout: the beeper LCD redrawn
+/// for the lock screen. A bordered panel (over the faint system well) frames three
+/// monospaced rows — a header readout (brand + unread tally / stale flag), the
+/// latest headline trailed by a block cursor, and a footer readout (status glyph,
+/// category, and received time). Idle reads "ALL CLEAR". Status is carried by a
+/// distinct SF Symbol per state since the monochrome tint would flatten color.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private struct RectangularAccessoryView: View {
+    let snapshot: NotifyMeWidgetSnapshot
+    let now: Date
+    let isStale: Bool
+
+    var body: some View {
+        AccessoryLcdFrame {
+            VStack(alignment: .leading, spacing: 1) {
+                header
+
+                if let latest = snapshot.items.first {
+                    message(latest)
+                } else {
+                    idle
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// Top readout line — brand mark on the left, unread tally (or stale flag) on
+    /// the right. Accentable so it can pick up the tint on tinted surfaces.
+    private var header: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "bell.fill")
+                .font(.system(size: 9, weight: .bold))
+            Text("NOTIFYME")
+                .font(.system(.caption2, design: .monospaced).weight(.bold))
+                .tracking(1)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            // The tally tag must stay on one line and win the squeeze over the
+            // brand mark, so it never wraps and pushes the header to two rows.
+            Text(statusTag)
+                .font(.system(.caption2, design: .monospaced).weight(.bold))
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .widgetAccentable()
+    }
+
+    /// Headline + footer rows for the latest message.
+    @ViewBuilder
+    private func message(_ item: NotifyMeWidgetItem) -> some View {
+        HStack(spacing: 0) {
+            Text(item.displayTitle)
+                .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            AccessoryCursor()
+        }
+
+        HStack(spacing: 3) {
+            Image(systemName: AccessoryStatus.symbol(item.statusColorName))
+                .font(.system(size: 8, weight: .bold))
+            Text(item.displayCategory)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let received = item.receivedDate {
+                Text("·")
+                    .layoutPriority(1)
+                Text(RetroRelativeTime.short(received, now: now))
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(.caption2, design: .monospaced))
+    }
+
+    /// Idle readout — caught up, mirroring the "NO NEW MESSAGES" idle LCD.
+    private var idle: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 0) {
+                Text("ALL CLEAR")
+                    .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                    .lineLimit(1)
+                AccessoryCursor()
+            }
+            Text("AWAITING SIGNAL")
+                .font(.system(.caption2, design: .monospaced))
+                .lineLimit(1)
+        }
+    }
+
+    private var statusTag: String {
+        if isStale { return "STALE" }
+        if snapshot.unreadCount > 0 {
+            return "\(AccessoryUnread.label(snapshot.unreadCount)) NEW"
+        }
+        return "RDY"
+    }
+}
+
+/// Bordered LCD-style panel for the rectangular accessory: the faint system well
+/// (`AccessoryWidgetBackground`) clipped to a rounded rect with a hairline border,
+/// rebuilding the Home Screen LCD framing in monochrome. The border renders in the
+/// lock-screen tint; the dimmed opacity keeps it reading as a frame, not a fill.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private struct AccessoryLcdFrame<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(AccessoryWidgetBackground())
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(lineWidth: 1)
+                    .opacity(0.5)
+            )
+    }
+}
+
+/// A solid block cursor sized for accessory readouts — the monochrome cousin of
+/// the Home Screen `CursorBlock`, trailing a headline to sell the lit-LCD read.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private struct AccessoryCursor: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .frame(width: 5, height: 10)
+            .padding(.leading, 2)
+    }
+}
+
+/// Maps a normalized status keyword to a distinct SF Symbol. Lock-screen widgets
+/// render monochrome, so status can't be carried by color — each state gets its
+/// own glyph instead. Mirrors the closed status set in `RetroWidgetPalette`.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private enum AccessoryStatus {
+    static func symbol(_ keyword: String) -> String {
+        switch keyword {
+        case "success":
+            return "checkmark.circle.fill"
+        case "error":
+            return "xmark.octagon.fill"
+        case "warning":
+            return "exclamationmark.triangle.fill"
+        default:
+            return "info.circle.fill"
+        }
+    }
+}
+
+/// Formats an unread count for the cramped accessory surfaces, capping runaway
+/// tallies at "99+" so neither the circular dial nor the rectangular header tag
+/// can overflow.
+@available(iOSApplicationExtension 16.0, iOS 16.0, *)
+private enum AccessoryUnread {
+    static func label(_ count: Int) -> String {
+        count > 99 ? "99+" : "\(count)"
+    }
+}
+
 // MARK: - Empty state
 
 /// Idle-pager empty state: even with nothing synced, the widget reads like a
@@ -600,6 +897,100 @@ struct NotifyMeWidgetView_Previews: PreviewProvider {
                 entry: NotifyMeWidgetEntry(date: Date(), snapshot: .edgeCases)
             )
             .previewContext(WidgetPreviewContext(family: .systemSmall))
+
+            // Lock-screen / StandBy accessory families (iOS 16+). Each of the
+            // three families is exercised across the full state matrix — unread,
+            // empty inbox, stale cache, clamping (overlong title / long category),
+            // and a 99+ backlog — so any Lock Screen overflow surfaces here. The
+            // accessory cases only exist on iOS 16+, hence the availability guard.
+            if #available(iOSApplicationExtension 16.0, iOS 16.0, *) {
+                // .accessoryInline — single line beside the clock.
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .preview)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryInline))
+                .previewDisplayName("Inline · Unread")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .empty)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryInline))
+                .previewDisplayName("Inline · Empty")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .stale)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryInline))
+                .previewDisplayName("Inline · Stale")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .edgeCases)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryInline))
+                .previewDisplayName("Inline · Clamp")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .highVolume)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryInline))
+                .previewDisplayName("Inline · 99+")
+
+                // .accessoryCircular — compact unread tally / struck bell.
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .preview)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryCircular))
+                .previewDisplayName("Circular · Unread")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .empty)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryCircular))
+                .previewDisplayName("Circular · Empty")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .stale)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryCircular))
+                .previewDisplayName("Circular · Stale")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .highVolume)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryCircular))
+                .previewDisplayName("Circular · 99+")
+
+                // .accessoryRectangular — the flagship LCD readout.
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .preview)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryRectangular))
+                .previewDisplayName("Rectangular · Unread")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .empty)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryRectangular))
+                .previewDisplayName("Rectangular · Empty")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .stale)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryRectangular))
+                .previewDisplayName("Rectangular · Stale")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .edgeCases)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryRectangular))
+                .previewDisplayName("Rectangular · Clamp")
+
+                NotifyMeWidgetView(
+                    entry: NotifyMeWidgetEntry(date: Date(), snapshot: .highVolume)
+                )
+                .previewContext(WidgetPreviewContext(family: .accessoryRectangular))
+                .previewDisplayName("Rectangular · 99+")
+            }
         }
     }
 }

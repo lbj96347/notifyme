@@ -22,6 +22,23 @@ struct NotifyMeWidget: Widget {
         }
         .configurationDisplayName("NotifyMe")
         .description("Your latest notifications at a glance.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies(Self.supportedFamilies)
+    }
+
+    /// Home Screen families on every supported OS, plus the lock-screen /
+    /// StandBy accessory families when running on iOS 16+ (where WidgetKit first
+    /// shipped `.accessory*`). The accessory families are appended behind an
+    /// availability check so the same binary still installs on iOS 14–15, which
+    /// don't know those `WidgetFamily` cases.
+    private static var supportedFamilies: [WidgetFamily] {
+        var families: [WidgetFamily] = [.systemSmall, .systemMedium, .systemLarge]
+        if #available(iOSApplicationExtension 16.0, iOS 16.0, *) {
+            families.append(contentsOf: [
+                .accessoryInline,
+                .accessoryCircular,
+                .accessoryRectangular,
+            ])
+        }
+        return families
     }
 }

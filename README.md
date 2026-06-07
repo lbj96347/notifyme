@@ -98,7 +98,13 @@ Three pieces and how they connect:
   `uid`.
 - **Flutter app** (`flutter_app/`) — uses Firebase Auth (sign-in), Firestore
   (inbox / search / read state), Firebase Messaging (registers the device FCM
-  token into `devices` and receives pushes), and Analytics.
+  token into `devices` and receives pushes), and Analytics. On iOS it also ships
+  a **WidgetKit widget** that mirrors the latest notifications: Home Screen
+  (small / medium / large) and, on **iOS 16+**, the **Lock Screen** and StandBy
+  (inline / circular / rectangular accessory families). The widget reads a shared
+  App Group snapshot — it never touches the network. See
+  [`flutter_app/ios/WIDGET_SETUP.md`](flutter_app/ios/WIDGET_SETUP.md) for the
+  App Group wiring and verification steps.
 
 ### Webhook payload contract
 

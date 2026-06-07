@@ -69,7 +69,9 @@ reconciles the snapshot on next launch.
 - `NotifyMeWidgetTheme.swift` — the retro palette mirrored from
   `lib/shared/retro_palette.dart` (`RetroWidgetPalette`), a `Color(hex:)` helper,
   and `RetroRelativeTime` for compact `now`/`5m`/`2h`/`3d` timestamps.
-- `NotifyMeWidgetView.swift` — SwiftUI surface across all three system families:
+- `NotifyMeWidgetView.swift` — SwiftUI surface across the three system families
+  **and** the three Lock Screen / StandBy accessory families (iOS 16+, see *Lock
+  Screen widgets* below):
   an empty/placeholder state, a **small** single-card readout of the latest
   notification, and **medium/large** layouts that render that same latest
   notification on the lit "beeper" LCD — the retro screen styling shared with the
@@ -84,9 +86,14 @@ reconciles the snapshot on next launch.
   back to the info color; every line is clamped (the title scales down before it
   truncates, body/footer truncate at the tail) so the fixed canvas can't
   overflow; and a row with no usable id deep-links to the inbox. The `#if DEBUG`
-  previews include dedicated `.stale` and `.edgeCases` fixtures.
-- `NotifyMeWidgetBundle.swift` — `@main` `WidgetBundle`; `kind == "NotifyMeWidget"`
-  matches `HomeWidgetService.defaultIosWidgetName`.
+  previews include dedicated `.stale` and `.edgeCases` fixtures, plus a full
+  accessory-family state matrix (unread / empty / stale / clamp / 99+) and a
+  `.highVolume` fixture that exercises the `99+` count cap.
+- `NotifyMeWidgetBundle.swift` — `@main` `WidgetBundle`. `kind == "NotifyMeWidget"`
+  matches `HomeWidgetService.defaultIosWidgetName`. `supportedFamilies` lists the
+  three system families on every OS and appends the three `.accessory*` families
+  behind an `#available(iOS 16, *)` check, so the same widget surfaces on the Home
+  Screen and the Lock Screen from one declaration.
 - `Info.plist` — `com.apple.widgetkit-extension` extension point.
 - `NotifyMeWidget.entitlements` — App Group (see below).
 
@@ -94,6 +101,40 @@ These files are members of the `NotifyMeWidget` target in the committed pbxproj.
 A standalone editor (or a SourceKit index that hasn't picked up the target
 membership yet) may still flag "cannot find type in scope" / `@main` until the
 target is compiled together — that's editor noise, not a build problem.
+
+## Lock Screen widgets (iOS 16+)
+
+The same `NotifyMeWidget` also installs on the **Lock Screen** (and StandBy)
+through WidgetKit's three accessory families. No extra target, entitlement, or
+App Group is required — the accessory families are appended to the bundle's
+`supportedFamilies` behind an `#available(iOS 16, *)` check, and they read the
+**same** App Group snapshot as the Home Screen widget, so everything in the
+*Refresh model* section (app-open sync, push-driven mirror, hourly backstop)
+keeps them current the same way.
+
+- **iOS 16 or later is required for the Lock Screen.** The accessory families
+  (`.accessoryInline`, `.accessoryCircular`, `.accessoryRectangular`) did not
+  exist before WidgetKit on iOS 16. On iOS 14–15 the app and Home Screen widget
+  still work; only the Lock Screen surfaces are absent. (The extension target
+  itself floors at iOS 14.0 — `IPHONEOS_DEPLOYMENT_TARGET = 14.0` — and the
+  accessory code is guarded so it simply isn't compiled in on older OSes.)
+- The accessory views render **monochrome** (the system tints them) over
+  `AccessoryWidgetBackground`, so the retro olive/LCD palette is intentionally
+  dropped there; status is carried by a distinct SF Symbol per state rather than
+  color. The three layouts:
+  - **Inline** (`.accessoryInline`) — one line beside the clock: a compact unread
+    tally leading with the count (`3 new · CI passed`), degrading to
+    `No new messages` when caught up.
+  - **Circular** (`.accessoryCircular`) — an unread count under a bell glyph (a
+    struck-through bell when caught up); large counts cap at `99+`.
+  - **Rectangular** (`.accessoryRectangular`) — the flagship: the beeper LCD
+    redrawn for the Lock Screen with a header readout (brand + unread tally / stale
+    flag), the latest headline with a block cursor, and a status/category/time
+    footer. Idle reads `ALL CLEAR`.
+- **Deep links work identically** — tapping the accessory widget opens the app via
+  the same `notifyme://…` scheme. The accessory families are single whole-widget
+  tap targets (`widgetURL`), like the small Home Screen tile, so the whole widget
+  routes to the latest notification's detail (falling back to the inbox).
 
 ## Notification Service Extension source (skeleton, already in the repo)
 
@@ -288,14 +329,21 @@ Swift WidgetKit code — that needs the manual pass below.
 
 ### Manual — iOS Simulator / device WidgetKit behavior
 
-The Swift surface (decoding, the three families, staleness, deep links) needs a
-real WidgetKit build; the extension targets are already wired (see *Manual Xcode
-steps*), so just open the workspace and run:
+The Swift surface (decoding, the three system families, the three iOS 16+
+accessory families, staleness, deep links) needs a real WidgetKit build; the
+extension targets are already wired (see *Manual Xcode steps*), so just open the
+workspace and run:
 
 1. **SwiftUI previews (fastest loop, no full build).** Open
    `NotifyMeWidgetView.swift` in Xcode and use the canvas. The `#if DEBUG`
-   previews include `.sample`, `.stale`, and `.edgeCases` fixtures — confirm:
-   - all three families render (small / medium / large);
+   previews include `.sample`, `.stale`, `.edgeCases`, and `.highVolume`
+   fixtures — confirm:
+   - all three system families render (small / medium / large);
+   - the three accessory families render (inline / circular / rectangular), each
+     with its labeled state matrix (unread / empty / stale / clamp / 99+) — these
+     previews are behind `#available(iOS 16, *)`, so use an iOS 16+ preview device;
+   - `.highVolume` (128 unread) caps the count at `99+` in the circular dial and
+     the rectangular `99+ NEW` header tag;
    - `.edgeCases` shows the blank-field fallbacks (`(no title)`, suppressed empty
      body, `GENERAL` category) and long title/body tail-truncate while the
      `CATEGORY · time` footer keeps its relative time visible;
@@ -309,9 +357,22 @@ steps*), so just open the workspace and run:
    - Long-press the home screen → **+** → add the **NotifyMe** widget in each
      size. Confirm every size shows the latest notification, the unread count,
      and a fresh relative time. Add the same widget in all three sizes to compare.
+   - **Lock Screen widgets (iOS 16+ device/Simulator).** Lock the device, then
+     long-press the Lock Screen → **Customize** → tap the widget area below the
+     clock (rectangular) or the row above it (inline, beside the date). Tap **+**
+     in the widget gallery, find **NotifyMe**, and add each accessory size:
+     - the **inline** slot (above the clock) shows the unread tally / headline;
+     - a **circular** slot shows the count under a bell (or struck-through bell
+       when caught up), capping at `99+`;
+     - the **rectangular** slot shows the LCD-style header / headline / footer.
+     Confirm they render monochrome (no olive palette), reflect the latest
+     notification and unread count, and update after a new webhook fires. On
+     iOS 14–15 the accessory sizes won't appear in the gallery — that's expected.
    - **Deep links:** tap the LCD panel (medium/large) or the small tile → the app
      opens that notification's detail; tap the header → lands on the inbox tab.
-     Verify this from all three app states:
+     Tapping any **accessory** (Lock Screen) widget opens the latest
+     notification's detail too (single whole-widget tap target). Verify this from
+     all three app states:
      foreground, backgrounded, and **terminated** (swipe-kill the app first, then tap — this
      exercises `initiallyLaunchedFromHomeWidget()`).
    - **Push-driven refresh (Notification Service Extension):** with the app

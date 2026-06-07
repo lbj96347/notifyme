@@ -261,6 +261,32 @@ extension NotifyMeWidgetSnapshot {
         updatedAt: Date().addingTimeInterval(-10 * 24 * 60 * 60)
     )
 
+    /// A large unread backlog: 128 unread rows so the count survives the view's
+    /// `unreadOnly` recompute and trips the accessory cap (`AccessoryUnread.label`
+    /// → "99+"). Exercises the circular dial's overflow guard and the rectangular
+    /// header's "99+ NEW" tag so neither can outgrow the cramped Lock Screen
+    /// surfaces. The newest row matches `.preview`'s latest so the headline reads
+    /// naturally.
+    static let highVolume: NotifyMeWidgetSnapshot = {
+        let items = (0..<128).map { index in
+            NotifyMeWidgetItem(
+                id: "high-\(index)",
+                title: index == 0 ? "CI passed" : "Backlog item \(index)",
+                body: "Queued notification awaiting review",
+                status: "info",
+                category: "ci",
+                receivedAt: 1_700_000_000_000 - Int64(index) * 60_000,
+                read: false,
+                url: nil
+            )
+        }
+        return NotifyMeWidgetSnapshot(
+            items: items,
+            unreadCount: items.count,
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_400)
+        )
+    }()
+
     /// Hostile/degenerate rows: an extreme title/body, a blank title with a
     /// missing body and an unknown status/category, and a row with no id (not
     /// deep-linkable). The overlong row is newest so the latest-message panel
