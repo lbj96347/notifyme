@@ -99,10 +99,11 @@ class _AuthScreenState extends State<AuthScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      Icons.notifications_active,
-                      size: 64,
-                      color: theme.colorScheme.primary,
+                    Image.asset(
+                      'assets/icon/icon.png',
+                      width: 72,
+                      height: 72,
+                      semanticLabel: 'NotifyMe beeper icon',
                     ),
                     const SizedBox(height: 16),
                     Text(

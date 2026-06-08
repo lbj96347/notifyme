@@ -30,8 +30,6 @@ class _FakeMessaging implements FirebaseMessaging {
 }
 
 class _FakeWidgetLaunch implements WidgetLaunchClient {
-  _FakeWidgetLaunch({this.initialUri});
-
   /// URL that "cold-started" the app from a terminated state (null = none).
   Uri? initialUri;
 
@@ -41,6 +39,9 @@ class _FakeWidgetLaunch implements WidgetLaunchClient {
   void emit(Uri? uri) => _clicks.add(uri);
 
   Future<void> close() => _clicks.close();
+
+  @override
+  Future<void> setAppGroupId(String groupId) async {}
 
   @override
   Stream<Uri?> get widgetClicked => _clicks.stream;
@@ -203,22 +204,23 @@ void main() {
     await router.dispose();
   });
 
-  testWidgets('a widget tap that cold-started the app routes after first frame', (
-    tester,
-  ) async {
-    seedNotification('n7');
-    widgetLaunch.initialUri = Uri.parse('notifyme://notification/n7');
-    await pumpHost(tester);
+  testWidgets(
+    'a widget tap that cold-started the app routes after first frame',
+    (tester) async {
+      seedNotification('n7');
+      widgetLaunch.initialUri = Uri.parse('notifyme://notification/n7');
+      await pumpHost(tester);
 
-    final router = buildRouter();
-    await router.register();
-    // The cold-start link is deferred to a post-frame callback.
-    await tester.pumpAndSettle();
+      final router = buildRouter();
+      await router.register();
+      // The cold-start link is deferred to a post-frame callback.
+      await tester.pumpAndSettle();
 
-    expect(presented.single.id, 'n7');
+      expect(presented.single.id, 'n7');
 
-    await router.dispose();
-  });
+      await router.dispose();
+    },
+  );
 
   testWidgets('unknown hosts and foreign schemes are ignored', (tester) async {
     await pumpHost(tester);

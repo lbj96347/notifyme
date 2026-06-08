@@ -1,5 +1,15 @@
+import OSLog
 import UserNotifications
 import WidgetKit
+
+/// Lightweight logger so extension execution can be confirmed on device via
+/// Console.app / `log stream` (filter on subsystem `com.asktobuild.notifyme`,
+/// category `NotificationService`). The extension runs in its own short-lived
+/// process, so a plain log line is the simplest proof it was invoked.
+private let serviceLog = Logger(
+    subsystem: "com.asktobuild.notifyme",
+    category: "NotificationService"
+)
 
 // Notification Service Extension.
 //
@@ -33,6 +43,11 @@ class NotificationService: UNNotificationServiceExtension {
         self.contentHandler = contentHandler
         bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent
 
+        // Confirm the extension actually ran for this push. `notificationId` is the
+        // backend's correlation id; it may be absent on alert-only pushes.
+        let notificationId = request.content.userInfo["notificationId"] as? String ?? "<none>"
+        serviceLog.log("didReceive invoked (notificationId: \(notificationId, privacy: .public))")
+
         // Best-effort widget mirror; never let it block or alter the banner.
         WidgetSnapshotWriter.record(from: request.content.userInfo)
 
@@ -42,6 +57,7 @@ class NotificationService: UNNotificationServiceExtension {
     override func serviceExtensionTimeWillExpire() {
         // The system is about to kill the extension — deliver whatever we have so
         // the banner still shows.
+        serviceLog.log("serviceExtensionTimeWillExpire — delivering best-attempt content")
         deliver()
     }
 
@@ -66,9 +82,19 @@ enum WidgetSnapshotWriter {
     /// and write timestamp, and reload the widget timeline. All best-effort: any
     /// missing piece simply skips the mirror rather than throwing.
     static func record(from userInfo: [AnyHashable: Any], now: Date = Date()) {
-        guard let defaults = UserDefaults(suiteName: NotifyMeWidgetKeys.appGroupId),
-              let item = makeItem(from: userInfo, now: now)
-        else { return }
+        guard let defaults = UserDefaults(suiteName: NotifyMeWidgetKeys.appGroupId) else {
+            serviceLog.error(
+                "widget mirror skipped: App Group unavailable (\(NotifyMeWidgetKeys.appGroupId, privacy: .public))"
+            )
+            return
+        }
+
+        guard let item = makeItem(from: userInfo, now: now) else {
+            serviceLog.error(
+                "widget mirror skipped: payload did not contain notificationId/title/body"
+            )
+            return
+        }
 
         var items = loadItems(defaults)
         // Drop any existing copy of this notification (a re-delivered push, or one
@@ -92,6 +118,9 @@ enum WidgetSnapshotWriter {
         defaults.set(String(stamp), forKey: NotifyMeWidgetKeys.updated)
 
         WidgetCenter.shared.reloadTimelines(ofKind: NotifyMeWidgetKeys.widgetKind)
+        serviceLog.log(
+            "widget mirror wrote \(items.count, privacy: .public) item(s), unread=\(unread, privacy: .public), reloaded kind=\(NotifyMeWidgetKeys.widgetKind, privacy: .public)"
+        )
     }
 
     /// Decode the currently-stored items, tolerating a missing/corrupt blob.

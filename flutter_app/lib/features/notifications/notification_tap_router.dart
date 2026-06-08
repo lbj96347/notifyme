@@ -26,6 +26,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/home_tab.dart';
+import '../widget/home_widget_service.dart';
 import 'notification_detail_screen.dart';
 import 'notification_model.dart';
 import 'notification_repository.dart';
@@ -47,6 +48,10 @@ const String _deepLinkNotificationHost = 'notification';
 /// [initiallyLaunchedFromHomeWidget] returns the URL that cold-started the app
 /// from a terminated state.
 abstract class WidgetLaunchClient {
+  /// Binds `home_widget` reads to the shared App Group container on platforms
+  /// that require it.
+  Future<void> setAppGroupId(String groupId);
+
   Stream<Uri?> get widgetClicked;
   Future<Uri?> initiallyLaunchedFromHomeWidget();
 }
@@ -54,6 +59,10 @@ abstract class WidgetLaunchClient {
 /// Production [WidgetLaunchClient] backed by the real `home_widget` package.
 class _DefaultWidgetLaunchClient implements WidgetLaunchClient {
   const _DefaultWidgetLaunchClient();
+
+  @override
+  Future<void> setAppGroupId(String groupId) =>
+      HomeWidget.setAppGroupId(groupId);
 
   @override
   Stream<Uri?> get widgetClicked => HomeWidget.widgetClicked;
@@ -125,9 +134,9 @@ class NotificationTapRouter {
 
     _openedSub = (_openedAppStream ?? FirebaseMessaging.onMessageOpenedApp)
         .listen(_openFromMessage);
-    _foregroundSub = (_foregroundStream ?? FirebaseMessaging.onMessage)
-        .listen(_showForegroundBanner);
-    _widgetSub = _widgetLaunch.widgetClicked.listen(_openFromUri);
+    _foregroundSub = (_foregroundStream ?? FirebaseMessaging.onMessage).listen(
+      _showForegroundBanner,
+    );
 
     // A tap that cold-started the app from a terminated state. Deferred to the
     // next frame so the first route (HomePage) is mounted before we push onto
@@ -139,11 +148,18 @@ class NotificationTapRouter {
       });
     }
 
-    final launchUri = await _widgetLaunch.initiallyLaunchedFromHomeWidget();
-    if (launchUri != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _openFromUri(launchUri);
-      });
+    try {
+      await _widgetLaunch.setAppGroupId(HomeWidgetService.defaultAppGroupId);
+      _widgetSub = _widgetLaunch.widgetClicked.listen(_openFromUri);
+
+      final launchUri = await _widgetLaunch.initiallyLaunchedFromHomeWidget();
+      if (launchUri != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _openFromUri(launchUri);
+        });
+      }
+    } catch (error) {
+      debugPrint('NotificationTapRouter widget launch setup failed: $error');
     }
   }
 

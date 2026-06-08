@@ -149,7 +149,7 @@ the widget snapshot between app launches (see *Refresh model*):
   de-dupes by id, trims to `maxItems` (10), recomputes unread/timestamp, and calls
   `WidgetCenter.reloadTimelines`. It does **not** import Firebase or hit the
   network.
-- `Info.plist` — `com.apple.usernotificationcenter.service` extension point.
+- `Info.plist` — `com.apple.usernotifications.service` extension point.
 - `NotificationService.entitlements` — the **same** App Group as the widget.
 
 This target shares `NotifyMeWidgetSnapshot.swift` with the widget target (it owns

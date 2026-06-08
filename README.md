@@ -101,10 +101,17 @@ Three pieces and how they connect:
   token into `devices` and receives pushes), and Analytics. On iOS it also ships
   a **WidgetKit widget** that mirrors the latest notifications: Home Screen
   (small / medium / large) and, on **iOS 16+**, the **Lock Screen** and StandBy
-  (inline / circular / rectangular accessory families). The widget reads a shared
-  App Group snapshot — it never touches the network. See
+  (inline / circular / rectangular accessory families). The widget never fetches
+  from Firestore itself — it only renders a JSON snapshot in a shared App Group
+  container. That snapshot is kept fresh primarily by **incoming push
+  notifications**: each push is delivered with `mutable-content: 1`, so iOS hands
+  it to the **Notification Service Extension** (`ios/NotificationService/`) — on
+  its own background process, even when the app is backgrounded or terminated —
+  which mirrors the push into the snapshot and reloads the widget timeline within
+  seconds of delivery, without opening the app. When the app next runs, app-open
+  sync reconciles the snapshot from Firestore as the source of truth. See
   [`flutter_app/ios/WIDGET_SETUP.md`](flutter_app/ios/WIDGET_SETUP.md) for the
-  App Group wiring and verification steps.
+  full refresh model, App Group wiring, and verification steps.
 
 ### Webhook payload contract
 

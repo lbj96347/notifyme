@@ -41,10 +41,7 @@ class DeviceService {
       return;
     }
 
-    // On iOS the APNS token may not be ready immediately after permission is
-    // granted; getToken() handles that wait internally and returns null only
-    // when no token can be obtained.
-    final token = await _messaging.getToken();
+    final token = await _getTokenWhenReady();
     if (token != null) {
       await _saveToken(uid: uid, token: token);
     }
@@ -61,6 +58,33 @@ class DeviceService {
   Future<void> dispose() async {
     await _refreshSub?.cancel();
     _refreshSub = null;
+  }
+
+  /// On Apple platforms, FCM cannot mint its token until APNs has produced one.
+  /// Fresh installs can hit this race immediately after permission is granted,
+  /// so wait briefly instead of surfacing `apns-token-not-set` during startup.
+  Future<String?> _getTokenWhenReady() async {
+    const attempts = 5;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        if (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS) {
+          final apnsToken = await _messaging.getAPNSToken();
+          if (apnsToken == null) {
+            await Future<void>.delayed(const Duration(milliseconds: 500));
+            continue;
+          }
+        }
+        return await _messaging.getToken();
+      } on FirebaseException catch (error) {
+        if (error.code != 'apns-token-not-set' || attempt == attempts - 1) {
+          rethrow;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+    }
+    debugPrint('DeviceService.register skipped: APNS token was not ready.');
+    return null;
   }
 
   /// Upsert the `devices` document for this (uid, token) pair.

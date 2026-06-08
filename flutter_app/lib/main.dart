@@ -8,10 +8,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:home_widget/home_widget.dart';
 
 import 'app/auth_gate.dart';
 import 'features/auth/auth_service.dart';
 import 'features/notifications/notification_tap_router.dart';
+import 'features/widget/home_widget_service.dart';
 import 'shared/retro_palette.dart';
 
 // GENERATED FILE — not committed. Run `flutterfire configure` to create it.
@@ -23,6 +25,12 @@ import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await HomeWidget.setAppGroupId(HomeWidgetService.defaultAppGroupId);
+  } catch (e) {
+    debugPrint('HomeWidget App Group initialization failed: $e');
+  }
 
   // Attempt Firebase initialization. We keep this resilient so the app can at
   // least render a diagnostic screen if configuration is missing or invalid,
